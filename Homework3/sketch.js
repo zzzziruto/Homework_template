@@ -435,7 +435,6 @@
   }
   function refreshCount() {
     $('#archive-count').textContent=`${notes.filter(n=>n.archived).length}개의 기억`;
-    $('#intro').hidden=notes.length>0;
   }
   function updateBounds() {
     bounds=notes.reduce((b,n)=>({left:Math.min(b.left,n.x-240),top:Math.min(b.top,n.y-240),right:Math.max(b.right,n.x+n.width+240),bottom:Math.max(b.bottom,n.y+n.height+240)}),{left:-800,right:800,top:-600,bottom:600});
@@ -780,7 +779,6 @@
     const text=input.value.trim();if(!text)return;
     addNote({text});input.value='';input.dispatchEvent(new Event('input'));input.focus();
   });
-  $('#example').addEventListener('click',()=>addNote({text:'오늘의 작은 생각이\n내일의 다른 모양이 된다.'}));
   $('#home').addEventListener('click',()=>notes.length?focusNote(notes.at(-1)):overview());
   $('#overview').addEventListener('click',overview);$('.wordmark').addEventListener('click',e=>{e.preventDefault();overview();});
   function refreshViewport() {
