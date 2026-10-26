@@ -244,13 +244,18 @@
     return {glyphs,width:Math.max(160,envelope.right-envelope.left+padding*2),height:Math.max(100,envelope.bottom-envelope.top+padding*2)};
   }
 
-  function silhouetteStyle(seed) {
+  function silhouetteStyle(seed,previousColor,savedColor) {
     const colors=['#2c7dff','#7835da','#ff99be','#ff5d31','#ff9a3e','#ccff66','#b19375','#4c292f'];
     const random=seededRandom(`silhouette:${seed}`);
-    // Preserve existing solid/outline assignments and every memo's color.
-    // Redistribute the retired third variant equally between the two styles.
-    const choice=Math.floor(random()*3),color=colors[Math.floor(random()*colors.length)];
+    // Keep the seeded shape variant and existing colors unless two consecutive
+    // memos match. Choose a replacement once, then save it with the memo.
+    const choice=Math.floor(random()*3),seedColor=colors[Math.floor(random()*colors.length)];
     const type=choice===2?(random()<.5?'solid':'outline'):['solid','outline'][choice];
+    let color=colors.includes(savedColor)?savedColor:seedColor;
+    if(color===previousColor) {
+      const available=colors.filter(candidate=>candidate!==previousColor);
+      color=available[Math.floor(random()*available.length)];
+    }
     return {type,color};
   }
   function polygonArea(points) {
@@ -409,7 +414,7 @@
   }
   function buildSilhouette(note) {
     if(note.silhouette)return;
-    const geometry=makeSilhouette(note.glyphs,note.width,note.height),style=silhouetteStyle(note.id);
+    const geometry=makeSilhouette(note.glyphs,note.width,note.height),style=silhouetteStyle(note.id,undefined,note.silhouetteColor);
     const svg=(tag,attributes)=>{const element=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,value] of Object.entries(attributes))element.setAttribute(key,value);return element;};
     const group=svg('g',{'class':`silhouette silhouette-${style.type}`,color:style.color});
     const path=svg('path',{d:geometry.path,fill:style.type==='outline'?'none':'currentColor'});
@@ -429,7 +434,7 @@
   }
   function persist() {
     try {
-      localStorage.setItem(STORAGE,JSON.stringify(notes.map(({id,text,x,y,archived,created})=>({id,text,x,y,archived,created}))));
+      localStorage.setItem(STORAGE,JSON.stringify(notes.map(({id,text,x,y,archived,created,silhouetteColor})=>({id,text,x,y,archived,created,silhouetteColor}))));
       return true;
     } catch { announce('브라우저 저장 공간을 사용할 수 없어요. 현재 화면에서만 유지됩니다.'); return false; }
   }
@@ -570,6 +575,8 @@
   }
   function addNote(record,restore=false) {
     const id=record.id||crypto.randomUUID();
+    // Assign by creation order, even when notes finish archiving out of order.
+    const {color:silhouetteColor}=silhouetteStyle(id,notes.at(-1)?.silhouetteColor,record.silhouetteColor);
     const pattern=makePattern(record.text,id,inkMetrics);
     const el=document.createElement('article');el.className='memo';el.setAttribute('aria-label',`메모 ${notes.length+1}`);
     const sentence=document.createElement('p');sentence.className='sentence';sentence.style.width=`${Math.min(360,innerWidth-64)}px`;
@@ -592,7 +599,7 @@
     // User-arranged notes may intentionally overlap; restore their exact positions.
     const canRestore=restore&&Number.isFinite(record.x)&&Number.isFinite(record.y);
     const position=canRestore?record:positionNote(width,height);
-    const note={id,number:notes.length+1,text:record.text,created:record.created||Date.now(),x:position.x,y:position.y,width,height,archived:!!record.archived,progress:record.archived?1:0,target:record.archived?1:0,el,sentence,pattern:patternEl,action,ring,actionLabel,glyphs:[]};
+    const note={id,silhouetteColor,number:notes.length+1,text:record.text,created:record.created||Date.now(),x:position.x,y:position.y,width,height,archived:!!record.archived,progress:record.archived?1:0,target:record.archived?1:0,el,sentence,pattern:patternEl,action,ring,actionLabel,glyphs:[]};
     el.style.left=`${note.x}px`;el.style.top=`${note.y}px`;el.style.width=`${width}px`;el.style.height=`${height}px`;meta.style.top=`${height-23}px`;
     const letterGroup=document.createElementNS('http://www.w3.org/2000/svg','g');letterGroup.classList.add('letter-pattern');patternEl.append(letterGroup);
     for(const glyph of pattern.glyphs){

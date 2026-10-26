@@ -67,6 +67,32 @@ for(let seed=0;seed<240;seed++) {
   variants.add(style.type);colors.add(style.color);pairs.add(style.type+style.color);
 }
 assert.equal(variants.size,2);assert.equal(colors.size,8);assert.equal(pairs.size,16);
+// Every palette color can be excluded without changing the shape variant.
+for(const previousColor of palette)for(let seed=0;seed<240;seed++) {
+  const base=api.silhouetteStyle(String(seed));
+  const style=api.silhouetteStyle(String(seed),previousColor);
+  assert(palette.has(style.color));assert.notEqual(style.color,previousColor);
+  assert.equal(style.type,base.type);
+  assert.equal(JSON.stringify(style),JSON.stringify(api.silhouetteStyle(String(seed),previousColor)));
+  if(base.color!==previousColor)assert.equal(style.color,base.color,'Non-conflicting legacy colors stay unchanged');
+}
+// Legacy records (including successive collisions) migrate once; saved colors
+// survive restoration and an unrelated seed color never overwrites them.
+const colorRecords=[];
+for(let index=0;index<120;index++) {
+  const id=String(Math.floor(index/3)),previousColor=colorRecords.at(-1)?.silhouetteColor;
+  const style=api.silhouetteStyle(id,previousColor);
+  colorRecords.push({id,silhouetteColor:style.color});
+}
+for(const [index,record] of colorRecords.entries()) {
+  const previousColor=colorRecords[index-1]?.silhouetteColor;
+  const restored=api.silhouetteStyle(record.id,previousColor,record.silhouetteColor);
+  assert.notEqual(restored.color,previousColor);assert.equal(restored.color,record.silhouetteColor);
+}
+assert.equal(api.silhouetteStyle('saved-color','#7835da','#2c7dff').color,'#2c7dff');
+assert.notEqual(api.silhouetteStyle('saved-collision','#2c7dff','#2c7dff').color,'#2c7dff');
+assert(palette.has(api.silhouetteStyle('invalid-color',undefined,'invalid').color));
+console.log('PASS: consecutive memo colors differ across all 8 exclusions, legacy colors retained where possible, saved colors stable.');
 const inside=(point,polygon)=>{
   let result=false;
   for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
@@ -158,7 +184,7 @@ const moveClasses=new Set(),moveWrites=[];
 const moveStyle={setProperty:()=>{}};
 Object.defineProperty(moveStyle,'transform',{get:()=>moveWrites.at(-1)||'',set:value=>moveWrites.push(value)});
 const moveElement={style:moveStyle,classList:{add:name=>moveClasses.add(name),remove:name=>moveClasses.delete(name)},setPointerCapture:()=>{}};
-const movingNote={id:'moved-note',text:'위치를 기억한다.',archived:true,created:1,el:moveElement,x:100,y:200,width:200,height:120};
+const movingNote={silhouetteColor:'#ff99be',id:'moved-note',text:'위치를 기억한다.',archived:true,created:1,el:moveElement,x:100,y:200,width:200,height:120};
 const storedPositions=[];gestureContext.STORAGE='test-memo-storage';gestureContext.localStorage={setItem:(key,value)=>storedPositions.push(JSON.parse(value))};
 vm.runInNewContext(source.slice(source.indexOf('  function persist()'),source.indexOf('  function refreshCount')),gestureContext);
 const actualPersist=gestureContext.persist;gestureContext.persist=()=>{saveCalls++;return actualPersist();};
@@ -199,6 +225,7 @@ flushMove();assert(moveStyle.transform.includes('120px,60px'));
 assert.equal(interactions.length,interactionsBeforeDrag,'Moving a memo must not transform letters');
 handlers.pointerup(notePointer('pointerup',1,130,115));
 assert.equal(moveStyle.left,'220px');assert.equal(moveStyle.top,'260px');assert.equal(moveStyle.transform,'');assert(!moveClasses.has('dragging'));assert.equal(saveCalls,1);assert.equal(boundsCalls,1);assert.equal(storedPositions.at(-1)[0].x,220);assert.equal(storedPositions.at(-1)[0].y,260);
+assert.equal(storedPositions.at(-1)[0].silhouetteColor,'#ff99be','Saving a position must retain the assigned silhouette color');
 clickContext.tapCandidate={...gestureContext.tapCandidate,note:clickContext.el};const heldToggleCount=originalToggles;clickHandlers.click({detail:1});assert.equal(originalToggles,heldToggleCount,'A drag release must not toggle the original');
 handlers.lostpointercapture(notePointer('lostpointercapture',1,130,115));assert.equal(saveCalls,1,'Lost capture after release must not undo or save twice');
 // Cancellation and Escape restore the exact starting position.
