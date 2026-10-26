@@ -6,6 +6,14 @@
   const FINAL = ['', ...'ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ'];
   const CLUSTERS = {ㄳ:'ㄱㅅ',ㄵ:'ㄴㅈ',ㄶ:'ㄴㅎ',ㄺ:'ㄹㄱ',ㄻ:'ㄹㅁ',ㄼ:'ㄹㅂ',ㄽ:'ㄹㅅ',ㄾ:'ㄹㅌ',ㄿ:'ㄹㅍ',ㅀ:'ㄹㅎ',ㅄ:'ㅂㅅ',ㅘ:'ㅗㅏ',ㅙ:'ㅗㅐ',ㅚ:'ㅗㅣ',ㅝ:'ㅜㅓ',ㅞ:'ㅜㅔ',ㅟ:'ㅜㅣ',ㅢ:'ㅡㅣ'};
   const STORAGE = 'sai.homework3.v1';
+  const INITIALIZED = 'sai.homework3.initialized.v1';
+  const EXAMPLE_MEMOS = [
+    '1977년에 발사된 보이저1호와 2호에 실린,지구의 각종 정보와 메시지를 담은 LP디스크이다. 목적은 외계 생명체에게 인류의 메시지를 전달하고자 함에 있다.',
+    '아레시보 메시지(Arecibo message)는 1974년 11월 16일, 푸에르토리코에 있는 아레시보 천문대 전파 망원경에서 우리 은하 내 구상성단 "구상성단" M13에 보낸 마이크로파 메시지이다.',
+    '비트(bit) + 맵(map)으로 이루어진 합성어. 비트의 배열 형태로 된 자료구조를 의미한다. 예를 들면 4개의 전등의 ON/OFF 상태를 비트맵으로 나타내면 ON은 1로 OFF는 0으로 두고 0110, 1111 등으로 나타내는 것.',
+    '드레이크 방정식은 인간과 교신이 가능한 지적인 외계생명체의 수를 계산하는 공식이다.',
+    '우리 은하 또는 은하수 은하(밀키 웨이 갤럭시, the Milky Way Galaxy)는 지구와 태양계가 속해 있는 은하로, 국부 은하군 내에 위치한다.'
+  ];
   const DELETE_SCRUB = {window:900,pause:200,reversals:3,minSpeed:.12}; // Screen px/ms; independent of zoom.
   const $ = (selector) => document.querySelector(selector);
   const viewport = $('#viewport'), world = $('#world'), input = $('#memo-input');
@@ -23,6 +31,11 @@
   const deletionEffects=[];
   let bounds = { left:-800, right:800, top:-600, bottom:600 };
 
+  function selectExamples(random=Math.random) {
+    const pool=EXAMPLE_MEMOS.slice();
+    for(let i=pool.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+    return pool.slice(0,3+Math.floor(random()*3));
+  }
   function decompose(character) {
     const code = character.codePointAt(0);
     let parts;
@@ -525,10 +538,12 @@
   function overview() {
     const {width:w,height:h}=viewportGeometry;
     if(!notes.length){moveCamera(w/2,h/2,DEFAULT_ZOOM);return;}
+    const composerTop=$('.composer-area').getBoundingClientRect().top-viewportGeometry.top;
+    const visibleTop=24,visibleBottom=Math.max(visibleTop+48,Math.min(h-24,composerTop-24));
     const left=Math.min(...notes.map(n=>n.x)),right=Math.max(...notes.map(n=>n.x+n.width));
     const top=Math.min(...notes.map(n=>n.y)),bottom=Math.max(...notes.map(n=>n.y+n.height));
-    const scale=Math.max(MIN_ZOOM,Math.min(DEFAULT_ZOOM,(w-70)/(right-left+80),(h-50)/(bottom-top+80)));
-    moveCamera(w/2-(left+right)/2*scale,h/2-(top+bottom)/2*scale,scale);
+    const scale=Math.max(MIN_ZOOM,Math.min(DEFAULT_ZOOM,(w-70)/(right-left+80),(visibleBottom-visibleTop)/(bottom-top+80)));
+    moveCamera(w/2-(left+right)/2*scale,(visibleTop+visibleBottom)/2-(top+bottom)/2*scale,scale);
   }
   function positionNote(width,height,random=Math.random) {
     if(!notes.length)return {x:-width/2,y:-height/2};
@@ -965,9 +980,22 @@
   addEventListener('resize',refreshViewport);
   window.visualViewport?.addEventListener('resize',refreshViewport);
   camera.x=viewportGeometry.width/2;camera.y=viewportGeometry.height/2;renderCamera();
+  let initialized=false,loaded=false;
   try {
+    initialized=localStorage.getItem(INITIALIZED)==='1';
     const saved=JSON.parse(localStorage.getItem(STORAGE)||'[]');
-    if(Array.isArray(saved))saved.filter(r=>r&&typeof r.text==='string'&&r.text.trim()&&r.text.length<=280).forEach(r=>addNote(r,true));
+    if(!Array.isArray(saved))throw new Error('Invalid memo archive');
+    saved.filter(r=>r&&typeof r.text==='string'&&r.text.trim()&&r.text.length<=280).forEach(r=>addNote(r,true));
+    loaded=true;
   } catch {announce('이전에 저장한 메모를 읽지 못했어요. 새 메모는 계속 작성할 수 있습니다.');}
-  if(notes.length){persist();focusNote(notes.at(-1));}
+  if(loaded) {
+    if(!initialized&&!notes.length)for(const text of selectExamples())addNote({id:`example-${crypto.randomUUID()}`,text,archived:true},true);
+    const saved=notes.length?persist():true;
+    // This small flag survives deleting every memo; sample content does not.
+    if(saved)try {localStorage.setItem(INITIALIZED,'1');}catch { /* Saved memos still restore if this optional flag is unavailable. */ }
+  }
+  if(notes.length) {
+    if(notes.every(note=>note.id.startsWith('example-')))overview();
+    else focusNote(notes.at(-1));
+  }
 })();
