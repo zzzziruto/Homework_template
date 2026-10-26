@@ -6,7 +6,7 @@
   const FINAL = ['', ...'ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ'];
   const CLUSTERS = {ㄳ:'ㄱㅅ',ㄵ:'ㄴㅈ',ㄶ:'ㄴㅎ',ㄺ:'ㄹㄱ',ㄻ:'ㄹㅁ',ㄼ:'ㄹㅂ',ㄽ:'ㄹㅅ',ㄾ:'ㄹㅌ',ㄿ:'ㄹㅍ',ㅀ:'ㄹㅎ',ㅄ:'ㅂㅅ',ㅘ:'ㅗㅏ',ㅙ:'ㅗㅐ',ㅚ:'ㅗㅣ',ㅝ:'ㅜㅓ',ㅞ:'ㅜㅔ',ㅟ:'ㅜㅣ',ㅢ:'ㅡㅣ'};
   const STORAGE = 'sai.homework3.v1';
-  const DELETE_TAP_INTERVAL = 50; // Milliseconds between two completed clicks/taps.
+  const DELETE_SCRUB = {window:900,pause:200,reversals:3,minSpeed:.12}; // Screen px/ms; independent of zoom.
   const $ = (selector) => document.querySelector(selector);
   const viewport = $('#viewport'), world = $('#world'), input = $('#memo-input');
   const zoomLabel=$('#position');
@@ -19,7 +19,7 @@
   const pointers = new Map();
   let lastPointer = null, panGesture = null, nativeGesture = null, tapCandidate = null, toastTimer, cameraAnimation = 0, cameraRender = 0, lastZoom = null, lastLowDetail = null;
   let memoPress=null,memoMove=null,memoMoveFrame=0;
-  let memoTap=null,deletionCanvas=null,deletionFrame=0;
+  let memoScrub=null,deletionCanvas=null,deletionFrame=0;
   const deletionEffects=[];
   let bounds = { left:-800, right:800, top:-600, bottom:600 };
 
@@ -635,6 +635,7 @@
     }
     action.addEventListener('click',()=>{if(!note.archived){note.target=1;animateNote(note);}});
     const toggleOriginal=()=>{
+      clearMemoScrub();
       note.reading=!note.reading;
       if(note.reading){
         note.patternCamera={...camera};
@@ -647,7 +648,7 @@
       if(note.deleting||e.target?.closest('button'))return;
       if(e.detail!==0&&(!tapCandidate||tapCandidate.note!==el||tapCandidate.moved||tapCandidate.panned))return;
       tapCandidate=null;
-      activateMemo(note,e,()=>{if(note.archived)toggleOriginal();});
+      clearMemoScrub();if(note.archived)toggleOriginal();
     });
     el.addEventListener('keydown',e=>{
       if(note.archived&&e.target===el&&(e.key==='Enter'||e.key===' ')){
@@ -659,22 +660,32 @@
     if(!restore){persist();focusNote(note);announce('문장 가까이에서 포인터나 손가락을 움직여보세요.');}
     return note;
   }
-  function clearMemoTap(flush=false) {
-    const pending=memoTap;memoTap=null;
-    if(!pending)return;
-    clearTimeout(pending.timer);
-    if(flush&&!pending.note.deleting)pending.single();
-  }
-  function activateMemo(note,event,single) {
-    if(note.deleting)return;
-    if(event.detail===0){clearMemoTap(true);single();return;}
-    const now=Number.isFinite(event.timeStamp)?event.timeStamp:performance.now();
-    if(memoTap?.note===note&&now-memoTap.at>=0&&now-memoTap.at<=DELETE_TAP_INTERVAL) {
-      clearMemoTap();deleteNote(note);return;
+  function clearMemoScrub() {memoScrub=null;}
+  function trackMemoScrub(e) {
+    if(memoMove||nativeGesture||pointers.size>1||(pointers.has(e.pointerId)&&(tapCandidate?.panned||tapCandidate?.held))||(e.pointerType==='touch'&&!pointers.has(e.pointerId))||(e.pointerType==='mouse'&&e.buttons&&!(e.buttons&1))) {clearMemoScrub();return false;}
+    const el=e.target.closest('.memo');
+    const note=el&&(memoScrub?.note.el===el?memoScrub.note:notes.find(n=>n.el===el));
+    if(!note||note.deleting){clearMemoScrub();return false;}
+    const x=e.clientX,y=e.clientY,rect=viewportGeometry,s=camera.scale;
+    const left=rect.left+camera.x+note.x*s,top=rect.top+camera.y+note.y*s;
+    if(x<left-8||x>left+note.width*s+8||y<top-8||y>top+note.height*s+8){clearMemoScrub();return false;}
+    const now=Number.isFinite(e.timeStamp)?e.timeStamp:performance.now();
+    if(!memoScrub||memoScrub.note!==note||memoScrub.id!==e.pointerId||now<memoScrub.time||now-memoScrub.time>DELETE_SCRUB.pause||now-memoScrub.start>DELETE_SCRUB.window) {
+      memoScrub={note,id:e.pointerId,start:now,time:now,x,y,anchorX:x,anchorY:y,dx:0,dy:0,distance:0,reversals:0};return false;
     }
-    clearMemoTap(true);
-    const pending={note,at:now,single,timer:0};memoTap=pending;
-    pending.timer=setTimeout(()=>{if(memoTap===pending)clearMemoTap(true);},DELETE_TAP_INTERVAL);
+    const scrub=memoScrub;
+    scrub.distance+=Math.hypot(x-scrub.x,y-scrub.y);scrub.x=x;scrub.y=y;scrub.time=now;
+    const dx=x-scrub.anchorX,dy=y-scrub.anchorY,length=Math.hypot(dx,dy);
+    const stroke=Math.max(6,Math.min(18,Math.min(note.width,note.height)*s*.16));
+    // Ignore tiny jitter. A real reversal must turn back by at least 120 degrees.
+    if(length>=stroke) {
+      const ux=dx/length,uy=dy/length;
+      if(scrub.dx*ux+scrub.dy*uy<-.5)scrub.reversals++;
+      scrub.dx=ux;scrub.dy=uy;scrub.anchorX=x;scrub.anchorY=y;
+    }
+    if(scrub.reversals<DELETE_SCRUB.reversals||scrub.distance<Math.max(48,stroke*4)||scrub.distance/Math.max(1,now-scrub.start)<DELETE_SCRUB.minSpeed)return false;
+    clearMemoScrub();if(tapCandidate)tapCandidate.moved=true;
+    deleteNote(note);return true;
   }
   function deletionTarget(x,y,cx,cy,width,height,margin,random) {
     const angle=Math.atan2(y-cy,x-cx)+(random()-.5)*.55;
@@ -769,13 +780,16 @@
       notes.splice(index,0,note);note.deleting=false;
       announce('브라우저 저장소를 갱신하지 못해 메모를 삭제하지 않았어요.');return false;
     }
-    clearMemoTap();
+    clearMemoScrub();
     if(memoPress?.note===note)cancelMemoPress();
     if(memoMove?.note===note)finishMemoMove(false);
     cancelAnimationFrame(cameraAnimation);cancelAnimationFrame(note.animationFrame);
     let effect;
     try {effect=makeDeletionEffect(note);}catch { /* Deletion still completes if graphics are unavailable. */ }
-    tapCandidate=null;lastPointer=null;
+    for(const id of [...pointers.keys()])if(note.el.hasPointerCapture?.(id)){
+      pointers.delete(id);note.el.releasePointerCapture(id);
+    }
+    panGesture=null;tapCandidate=null;lastPointer=null;
     const focused=note.el.contains(document.activeElement);
     note.el.remove();note.el.replaceChildren();note.glyphs.length=0;
     // No deleted source, glyph, contour, DOM, or camera reference survives here.
@@ -808,7 +822,7 @@
     press.timer=setTimeout(()=>{
       if(memoPress!==press||pointers.size!==1||!pointers.has(press.id))return;
       const point=pointers.get(press.id);
-      clearMemoTap();memoPress=null;cancelAnimationFrame(cameraAnimation);lastPointer=null;
+      clearMemoScrub();memoPress=null;cancelAnimationFrame(cameraAnimation);lastPointer=null;
       memoMove={note,id:press.id,x:point.x,y:point.y,startX:note.x,startY:note.y};
       if(tapCandidate){tapCandidate.moved=true;tapCandidate.held=true;}
       note.el.style.setProperty('--drag-outline',`${1/camera.scale}px`);
@@ -848,35 +862,31 @@
 
   viewport.addEventListener('pointerdown',e=>{
     if(e.target.closest('button'))return;
-    if(e.pointerType==='mouse'&&e.button!==0){clearMemoTap();cancelMemoPress();if(!memoMove)tapCandidate=null;return;}
+    if(e.pointerType==='mouse'&&e.button!==0){clearMemoScrub();cancelMemoPress();if(!memoMove)tapCandidate=null;return;}
     if(pointers.has(e.pointerId))return;
     const memo=e.target.closest('.memo');
-    if(memoTap) {
-      const now=Number.isFinite(e.timeStamp)?e.timeStamp:performance.now(),gap=now-memoTap.at;
-      if(pointers.size>0)clearMemoTap();
-      else if(memoTap.note.el===memo&&gap>=0&&gap<=DELETE_TAP_INTERVAL)clearTimeout(memoTap.timer);
-      else clearMemoTap(true);
-    }
     if(pointers.size===0)tapCandidate={note:memo,id:e.pointerId,x:e.clientX,y:e.clientY,moved:false,panned:false};
-    else {clearMemoTap();if(tapCandidate)tapCandidate.panned=true;finishMemoMove(true);}
+    else {clearMemoScrub();if(tapCandidate)tapCandidate.panned=true;finishMemoMove(true);}
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});(memo||viewport).setPointerCapture(e.pointerId);
     lastPointer={x:e.clientX,y:e.clientY};
     if(pointers.size===1&&memo) {
       const note=notes.find(n=>n.el===memo);
-      if(note){cancelAnimationFrame(cameraAnimation);armMemoMove(note,e);}
+      if(note){cancelAnimationFrame(cameraAnimation);armMemoMove(note,e);trackMemoScrub(e);}
     }
     if(pointers.size===2){cancelMemoPress();const p=[...pointers.values()];panGesture={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2,distance:Math.max(8,Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y))};}
   });
   viewport.addEventListener('pointermove',e=>{
     if(memoPress&&memoPress.id===e.pointerId&&Math.hypot(e.clientX-memoPress.x,e.clientY-memoPress.y)>6)cancelMemoPress();
-    if(tapCandidate&&tapCandidate.id===e.pointerId&&Math.hypot(e.clientX-tapCandidate.x,e.clientY-tapCandidate.y)>6){tapCandidate.moved=true;clearMemoTap();}
+    if(tapCandidate&&tapCandidate.id===e.pointerId&&Math.hypot(e.clientX-tapCandidate.x,e.clientY-tapCandidate.y)>6)tapCandidate.moved=true;
     if(pointers.has(e.pointerId))pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(pointers.size>=2){
+      clearMemoScrub();
       const p=[...pointers.values()],center={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2,distance:Math.max(8,Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y))};
       if(panGesture&&!nativeGesture)zoomAt(camera.scale*center.distance/panGesture.distance,center,panGesture);
       panGesture=center;lastPointer=null;return;
     }
     if(memoMove&&memoMove.id===e.pointerId){e.preventDefault();moveMemo(e);return;}
+    if(trackMemoScrub(e))return;
     if(memoPress||(tapCandidate?.held&&pointers.has(e.pointerId)))return;
     if(e.pointerType==='touch'&&!pointers.has(e.pointerId))return;
     if(e.pointerType==='touch'&&tapCandidate?.panned)return;
@@ -890,14 +900,14 @@
     if(memoPress?.id===e.pointerId)cancelMemoPress();
     if(memoMove?.id===e.pointerId)finishMemoMove(e.type==='pointerup');
     pointers.delete(e.pointerId);panGesture=null;lastPointer=null;
-    if(e.type!=='pointerup'||tapCandidate?.moved||tapCandidate?.panned)clearMemoTap();
+    if(e.type!=='pointerup'||e.pointerType!=='mouse'||!tapCandidate?.moved||tapCandidate?.held||tapCandidate?.panned)clearMemoScrub();
     if(e.type!=='pointerup'&&tapCandidate)tapCandidate.panned=true;renderCamera();
   }
   viewport.addEventListener('pointerup',release);viewport.addEventListener('pointercancel',release);viewport.addEventListener('lostpointercapture',release);
-  viewport.addEventListener('pointerleave',()=>{lastPointer=null;});
+  viewport.addEventListener('pointerleave',()=>{clearMemoScrub();lastPointer=null;});
   viewport.addEventListener('contextmenu',e=>{if(memoPress||memoMove||tapCandidate?.held)e.preventDefault();});
   viewport.addEventListener('wheel',e=>{
-    clearMemoTap();finishMemoMove(true);tapCandidate=null;
+    clearMemoScrub();finishMemoMove(true);tapCandidate=null;
     e.preventDefault();cancelAnimationFrame(cameraAnimation);lastPointer=null;
     const factor=e.deltaMode===1?16:e.deltaMode===2?viewportGeometry.height:1;
     if(e.ctrlKey){
@@ -909,7 +919,7 @@
   },{passive:false});
   // WebKit emits GestureEvents for a trackpad pinch instead of ctrl+wheel.
   viewport.addEventListener('gesturestart',e=>{
-    e.preventDefault();clearMemoTap();finishMemoMove(true);if(tapCandidate)tapCandidate.panned=true;lastPointer=null;cancelAnimationFrame(cameraAnimation);
+    e.preventDefault();clearMemoScrub();finishMemoMove(true);if(tapCandidate)tapCandidate.panned=true;lastPointer=null;cancelAnimationFrame(cameraAnimation);
     nativeGesture={scale:camera.scale,point:gesturePoint(e)};
   },{passive:false});
   viewport.addEventListener('gesturechange',e=>{
@@ -921,7 +931,7 @@
   viewport.addEventListener('keydown',e=>{
     if(e.key==='Escape'&&(memoMove||memoPress)){e.preventDefault();if(tapCandidate)tapCandidate.moved=true;finishMemoMove(false);return;}
     if(e.target!==viewport)return;
-    clearMemoTap();
+    clearMemoScrub();
     if(memoMove||memoPress)finishMemoMove(true);
     if(['+','=','-','_','0'].includes(e.key)){
       e.preventDefault();tapCandidate=null;
@@ -930,9 +940,9 @@
     const directions={ArrowLeft:[80,0],ArrowRight:[-80,0],ArrowUp:[0,80],ArrowDown:[0,-80]};
     if(directions[e.key]){e.preventDefault();cancelAnimationFrame(cameraAnimation);camera.x+=directions[e.key][0];camera.y+=directions[e.key][1];clampCamera();renderCamera();}
   });
-  window.addEventListener('blur',()=>{clearMemoTap();finishMemoMove(false);pointers.clear();panGesture=null;tapCandidate=null;lastPointer=null;});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearMemoTap();clearDeletionEffects();}});
-  window.addEventListener('pagehide',()=>{clearMemoTap();clearDeletionEffects();});
+  window.addEventListener('blur',()=>{clearMemoScrub();finishMemoMove(false);pointers.clear();panGesture=null;tapCandidate=null;lastPointer=null;});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearMemoScrub();clearDeletionEffects();}});
+  window.addEventListener('pagehide',()=>{clearMemoScrub();clearDeletionEffects();});
   let composing=false;
   input.addEventListener('compositionstart',()=>{composing=true;});input.addEventListener('compositionend',()=>{composing=false;});
   input.addEventListener('input',()=>{
