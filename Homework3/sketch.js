@@ -6,6 +6,7 @@
   const FINAL = ['', ...'ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ'];
   const CLUSTERS = {ㄳ:'ㄱㅅ',ㄵ:'ㄴㅈ',ㄶ:'ㄴㅎ',ㄺ:'ㄹㄱ',ㄻ:'ㄹㅁ',ㄼ:'ㄹㅂ',ㄽ:'ㄹㅅ',ㄾ:'ㄹㅌ',ㄿ:'ㄹㅍ',ㅀ:'ㄹㅎ',ㅄ:'ㅂㅅ',ㅘ:'ㅗㅏ',ㅙ:'ㅗㅐ',ㅚ:'ㅗㅣ',ㅝ:'ㅜㅓ',ㅞ:'ㅜㅔ',ㅟ:'ㅜㅣ',ㅢ:'ㅡㅣ'};
   const STORAGE = 'sai.homework3.v1';
+  const DELETE_TAP_INTERVAL = 50; // Milliseconds between two completed clicks/taps.
   const $ = (selector) => document.querySelector(selector);
   const viewport = $('#viewport'), world = $('#world'), input = $('#memo-input');
   const zoomLabel=$('#position');
@@ -18,6 +19,8 @@
   const pointers = new Map();
   let lastPointer = null, panGesture = null, nativeGesture = null, tapCandidate = null, toastTimer, cameraAnimation = 0, cameraRender = 0, lastZoom = null, lastLowDetail = null;
   let memoPress=null,memoMove=null,memoMoveFrame=0;
+  let memoTap=null,deletionCanvas=null,deletionFrame=0;
+  const deletionEffects=[];
   let bounds = { left:-800, right:800, top:-600, bottom:600 };
 
   function decompose(character) {
@@ -444,7 +447,8 @@
   }
   function persist() {
     try {
-      localStorage.setItem(STORAGE,JSON.stringify(notes.map(({id,text,x,y,archived,created,silhouetteColor,silhouetteType})=>({id,text,x,y,archived,created,silhouetteColor,silhouetteType}))));
+      if(notes.length)localStorage.setItem(STORAGE,JSON.stringify(notes.map(({id,text,x,y,archived,created,silhouetteColor,silhouetteType})=>({id,text,x,y,archived,created,silhouetteColor,silhouetteType}))));
+      else localStorage.removeItem(STORAGE);
       return true;
     } catch { announce('브라우저 저장 공간을 사용할 수 없어요. 현재 화면에서만 유지됩니다.'); return false; }
   }
@@ -540,6 +544,7 @@
     return {x:centerX-width/2,y:Math.max(...notes.map(n=>n.y+n.height))+gap};
   }
   function renderNote(note) {
+    if(note.deleting)return;
     const t=note.progress,reading=note.reading;
     const eased=t*t*(3-2*t);
     note.sentence.style.opacity=reading?1:Math.max(0,1-t*3);
@@ -565,30 +570,33 @@
     }
   }
   function complete(note) {
-    if(note.archived)return;
+    if(note.archived||note.deleting)return;
     note.archived=true;note.progress=1;note.target=1;buildSilhouette(note);renderNote(note);refreshCount();
     if(memoMove?.note!==note&&memoPress?.note!==note)focusNote(note);
     const saved=persist();
     if(saved)announce('문장이 새로운 모양으로 남았어요. 이 브라우저에 저장되었습니다.');
   }
   function animateNote(note) {
-    if(note.animating)return;note.animating=true;
+    if(note.animating||note.deleting)return;note.animating=true;
     function frame() {
+      note.animationFrame=0;
+      if(note.deleting){note.animating=false;return;}
       note.progress=reducedMotion?note.target:note.progress+(note.target-note.progress)*.13;
       if(note.target-note.progress<.001)note.progress=note.target;
       renderNote(note);
       if(note.progress>=.999&&note.target===1){complete(note);note.animating=false;}
-      else if(note.progress!==note.target)requestAnimationFrame(frame);
+      else if(note.progress!==note.target)note.animationFrame=requestAnimationFrame(frame);
       else note.animating=false;
     }
-    requestAnimationFrame(frame);
+    note.animationFrame=requestAnimationFrame(frame);
   }
   function addNote(record,restore=false) {
     const id=record.id||crypto.randomUUID();
+    const number=(notes.at(-1)?.number||0)+1;
     // Assign by creation order, even when notes finish archiving out of order.
     const {color:silhouetteColor,type:silhouetteType}=assignSilhouetteStyle(id,notes,record);
     const pattern=makePattern(record.text,id,inkMetrics);
-    const el=document.createElement('article');el.className='memo';el.setAttribute('aria-label',`메모 ${notes.length+1}`);
+    const el=document.createElement('article');el.className='memo';el.setAttribute('aria-label',`메모 ${number}`);
     const sentence=document.createElement('p');sentence.className='sentence';sentence.style.width=`${Math.min(360,innerWidth-64)}px`;
     sentence.setAttribute('aria-label',record.text);
     [...record.text].forEach(char=>{const span=document.createElement('span');span.textContent=char;span.setAttribute('aria-hidden','true');sentence.append(span);});
@@ -597,7 +605,7 @@
     patternEl.setAttribute('width',pattern.width);patternEl.setAttribute('height',pattern.height);
     patternEl.setAttribute('viewBox',`0 0 ${pattern.width} ${pattern.height}`);
     const meta=document.createElement('div');meta.className='note-meta';
-    const index=document.createElement('span');index.className='note-index';index.textContent=String(notes.length+1).padStart(2,'0');
+    const index=document.createElement('span');index.className='note-index';index.textContent=String(number).padStart(2,'0');
     const action=document.createElement('button');action.className='note-action';
     const ring=document.createElement('span');ring.className='progress';ring.setAttribute('aria-hidden','true');
     const actionLabel=document.createElement('span');action.append(ring,actionLabel);
@@ -609,7 +617,7 @@
     // User-arranged notes may intentionally overlap; restore their exact positions.
     const canRestore=restore&&Number.isFinite(record.x)&&Number.isFinite(record.y);
     const position=canRestore?record:positionNote(width,height);
-    const note={id,silhouetteColor,silhouetteType,number:notes.length+1,text:record.text,created:record.created||Date.now(),x:position.x,y:position.y,width,height,archived:!!record.archived,progress:record.archived?1:0,target:record.archived?1:0,el,sentence,pattern:patternEl,action,ring,actionLabel,glyphs:[]};
+    const note={id,silhouetteColor,silhouetteType,number,text:record.text,created:record.created||Date.now(),x:position.x,y:position.y,width,height,archived:!!record.archived,progress:record.archived?1:0,target:record.archived?1:0,el,sentence,pattern:patternEl,action,ring,actionLabel,glyphs:[]};
     el.style.left=`${note.x}px`;el.style.top=`${note.y}px`;el.style.width=`${width}px`;el.style.height=`${height}px`;meta.style.top=`${height-23}px`;
     const letterGroup=document.createElementNS('http://www.w3.org/2000/svg','g');letterGroup.classList.add('letter-pattern');patternEl.append(letterGroup);
     for(const glyph of pattern.glyphs){
@@ -632,9 +640,10 @@
       renderNote(note);
     };
     el.addEventListener('click',e=>{
-      if(!note.archived)return;
+      if(note.deleting||e.target?.closest('button'))return;
       if(e.detail!==0&&(!tapCandidate||tapCandidate.note!==el||tapCandidate.moved||tapCandidate.panned))return;
-      toggleOriginal();tapCandidate=null;
+      tapCandidate=null;
+      activateMemo(note,e,()=>{if(note.archived)toggleOriginal();});
     });
     el.addEventListener('keydown',e=>{
       if(note.archived&&e.target===el&&(e.key==='Enter'||e.key===' ')){
@@ -645,6 +654,132 @@
     notes.push(note);renderNote(note);refreshCount();updateBounds();
     if(!restore){persist();focusNote(note);announce('문장 가까이에서 포인터나 손가락을 움직여보세요.');}
     return note;
+  }
+  function clearMemoTap(flush=false) {
+    const pending=memoTap;memoTap=null;
+    if(!pending)return;
+    clearTimeout(pending.timer);
+    if(flush&&!pending.note.deleting)pending.single();
+  }
+  function activateMemo(note,event,single) {
+    if(note.deleting)return;
+    if(event.detail===0){clearMemoTap(true);single();return;}
+    const now=Number.isFinite(event.timeStamp)?event.timeStamp:performance.now();
+    if(memoTap?.note===note&&now-memoTap.at>=0&&now-memoTap.at<=DELETE_TAP_INTERVAL) {
+      clearMemoTap();deleteNote(note);return;
+    }
+    clearMemoTap(true);
+    const pending={note,at:now,single,timer:0};memoTap=pending;
+    pending.timer=setTimeout(()=>{if(memoTap===pending)clearMemoTap(true);},DELETE_TAP_INTERVAL);
+  }
+  function deletionTarget(x,y,cx,cy,width,height,margin,random) {
+    const angle=Math.atan2(y-cy,x-cx)+(random()-.5)*.55;
+    const dx=Math.cos(angle),dy=Math.sin(angle);
+    const tx=dx>0?(width+margin-x)/dx:dx<0?(-margin-x)/dx:Infinity;
+    const ty=dy>0?(height+margin-y)/dy:dy<0?(-margin-y)/dy:Infinity;
+    const distance=Math.max(0,Math.min(tx,ty))+margin+random()*80;
+    return {endX:x+dx*distance,endY:y+dy*distance,spin:(random()-.5)*1.6,delay:random()*.12};
+  }
+  function makeDeletionEffect(note) {
+    if(reducedMotion)return null;
+    const {width,height}=viewportGeometry,scale=camera.scale,random=seededRandom(`delete:${note.id}`);
+    const particles=[],family=getComputedStyle(document.body).fontFamily;
+    const x0=note.x*scale+camera.x,y0=note.y*scale+camera.y;
+    if(scale<=.15+1e-9) {
+      if(!note.silhouette)buildSilhouette(note);
+      // Rasterize the existing contour once; all fragment centers stay inside it.
+      const mask=document.createElement('canvas'),sampleScale=Math.min(scale,240/Math.max(note.width,note.height));
+      mask.width=Math.max(1,Math.ceil(note.width*sampleScale));mask.height=Math.max(1,Math.ceil(note.height*sampleScale));
+      const ctx=mask.getContext('2d',{willReadFrequently:true});
+      ctx.scale(sampleScale,sampleScale);ctx.fill(new Path2D(note.silhouette.querySelector('path').getAttribute('d')),'evenodd');
+      const pixels=ctx.getImageData(0,0,mask.width,mask.height).data;
+      const step=Math.max(2,Math.ceil(Math.sqrt(mask.width*mask.height/220))),ratio=scale/sampleScale;
+      for(let y=step/2;y<mask.height;y+=step)for(let x=step/2;x<mask.width;x+=step) {
+        if(pixels[(Math.floor(y)*mask.width+Math.floor(x))*4+3]<128)continue;
+        particles.push({x:x0+x*ratio,y:y0+y*ratio,radius:Math.max(1,step*ratio*(.28+random()*.55)),color:note.silhouetteColor});
+      }
+      // A very small contour can fall between grid samples.
+      if(!particles.length)for(let i=3;i<pixels.length;i+=4)if(pixels[i]>=128) {
+        const pixel=(i-3)/4;
+        particles.push({x:x0+(pixel%mask.width)*ratio,y:y0+Math.floor(pixel/mask.width)*ratio,radius:Math.max(1,ratio),color:note.silhouetteColor});break;
+      }
+      mask.width=mask.height=1;
+    }else if(note.reading||note.progress<.34) {
+      const style=getComputedStyle(note.sentence),size=parseFloat(style.fontSize)*scale;
+      const left=note.sentence.offsetLeft,top=note.sentence.offsetTop-(note.reading?0:note.progress*8);
+      for(const span of note.sentence.children)if(span.textContent.trim())particles.push({char:span.textContent,x:x0+(left+span.offsetLeft+span.offsetWidth/2)*scale,y:y0+(top+span.offsetTop+span.offsetHeight/2)*scale,size,weight:style.fontWeight,angle:0});
+    }else {
+      const t=note.progress,ease=t*t*(3-2*t);
+      for(const glyph of note.glyphs)particles.push({char:glyph.char,x:x0+(glyph.sx+(glyph.cx-glyph.sx)*ease)*scale,y:y0+(glyph.sy+(glyph.cy-glyph.sy)*ease)*scale,size:glyph.size*scale,weight:glyph.weight,angle:glyph.angle*ease*Math.PI/180});
+    }
+    const visible=particles.filter(p=>p.x>=-200&&p.x<=width+200&&p.y>=-200&&p.y<=height+200);
+    const cx=x0+note.width*scale/2,cy=y0+note.height*scale/2;
+    for(const particle of visible)Object.assign(particle,deletionTarget(particle.x,particle.y,cx,cy,width,height,Math.max(40,particle.size||particle.radius*2),random));
+    return {particles:visible,family,start:performance.now(),duration:1400,kind:scale<=.15+1e-9?'circles':'letters'};
+  }
+  function clearDeletionEffects() {
+    cancelAnimationFrame(deletionFrame);deletionFrame=0;
+    for(const effect of deletionEffects)effect.particles.length=0;
+    deletionEffects.length=0;
+    if(deletionCanvas){deletionCanvas.remove();deletionCanvas.width=deletionCanvas.height=1;deletionCanvas=null;}
+  }
+  function drawDeletionEffects(now) {
+    deletionFrame=0;
+    if(!deletionCanvas)return;
+    const width=viewportGeometry.width,height=viewportGeometry.height,dpr=Math.min(devicePixelRatio||1,2);
+    if(deletionCanvas.width!==Math.ceil(width*dpr)||deletionCanvas.height!==Math.ceil(height*dpr)) {
+      deletionCanvas.width=Math.ceil(width*dpr);deletionCanvas.height=Math.ceil(height*dpr);
+    }
+    const ctx=deletionCanvas.getContext('2d');ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,deletionCanvas.width,deletionCanvas.height);
+    for(let i=deletionEffects.length-1;i>=0;i--) {
+      const effect=deletionEffects[i],time=(now-effect.start)/effect.duration;
+      if(time>=1){effect.particles.length=0;deletionEffects.splice(i,1);continue;}
+      for(const p of effect.particles) {
+        const t=Math.max(0,(time-p.delay)/(1-p.delay)),travel=.12*t+.88*t*t;
+        const x=p.x+(p.endX-p.x)*travel,y=p.y+(p.endY-p.y)*travel;
+        if(p.char) {
+          const angle=p.angle+p.spin*t,c=Math.cos(angle)*dpr,s=Math.sin(angle)*dpr;
+          ctx.setTransform(c,s,-s,c,x*dpr,y*dpr);ctx.fillStyle='#000';ctx.font=`${p.weight} ${p.size}px ${effect.family}`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(p.char,0,0);
+        }else {
+          ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(x,y,p.radius*(1+t*.2),0,Math.PI*2);ctx.fill();
+        }
+      }
+    }
+    if(deletionEffects.length)deletionFrame=requestAnimationFrame(drawDeletionEffects);
+    else clearDeletionEffects();
+  }
+  function startDeletionEffect(effect) {
+    if(!effect?.particles.length||document.hidden)return;
+    if(!deletionCanvas) {
+      deletionCanvas=document.createElement('canvas');deletionCanvas.className='deletion-layer';deletionCanvas.setAttribute('aria-hidden','true');viewport.append(deletionCanvas);
+    }
+    deletionCanvas.dataset.kind=effect.kind;deletionEffects.push(effect);
+    if(!deletionFrame)deletionFrame=requestAnimationFrame(drawDeletionEffects);
+  }
+  function deleteNote(note) {
+    const index=notes.indexOf(note);
+    if(index<0||note.deleting)return false;
+    note.deleting=true;notes.splice(index,1);
+    // Commit first, so a reload during the animation cannot resurrect the memo.
+    if(!persist()) {
+      notes.splice(index,0,note);note.deleting=false;
+      announce('브라우저 저장소를 갱신하지 못해 메모를 삭제하지 않았어요.');return false;
+    }
+    clearMemoTap();
+    if(memoPress?.note===note)cancelMemoPress();
+    if(memoMove?.note===note)finishMemoMove(false);
+    cancelAnimationFrame(cameraAnimation);cancelAnimationFrame(note.animationFrame);
+    let effect;
+    try {effect=makeDeletionEffect(note);}catch { /* Deletion still completes if graphics are unavailable. */ }
+    tapCandidate=null;lastPointer=null;
+    const focused=note.el.contains(document.activeElement);
+    note.el.remove();note.el.replaceChildren();note.glyphs.length=0;
+    // No deleted source, glyph, contour, DOM, or camera reference survives here.
+    for(const key of Object.keys(note))if(key!=='deleting')note[key]=null;
+    inkMetrics.cache?.clear();
+    updateBounds();refreshCount();renderCamera();
+    if(focused)viewport.focus({preventScroll:true});
+    startDeletionEffect(effect);announce('메모를 삭제했어요.');return true;
   }
   function interact(x,y,distance) {
     if(distance<.2||distance>150)return;
@@ -669,7 +804,7 @@
     press.timer=setTimeout(()=>{
       if(memoPress!==press||pointers.size!==1||!pointers.has(press.id))return;
       const point=pointers.get(press.id);
-      memoPress=null;cancelAnimationFrame(cameraAnimation);lastPointer=null;
+      clearMemoTap();memoPress=null;cancelAnimationFrame(cameraAnimation);lastPointer=null;
       memoMove={note,id:press.id,x:point.x,y:point.y,startX:note.x,startY:note.y};
       if(tapCandidate){tapCandidate.moved=true;tapCandidate.held=true;}
       note.el.style.setProperty('--drag-outline',`${1/camera.scale}px`);
@@ -709,11 +844,17 @@
 
   viewport.addEventListener('pointerdown',e=>{
     if(e.target.closest('button'))return;
-    if(e.pointerType==='mouse'&&e.button!==0){cancelMemoPress();if(!memoMove)tapCandidate=null;return;}
+    if(e.pointerType==='mouse'&&e.button!==0){clearMemoTap();cancelMemoPress();if(!memoMove)tapCandidate=null;return;}
     if(pointers.has(e.pointerId))return;
     const memo=e.target.closest('.memo');
+    if(memoTap) {
+      const now=Number.isFinite(e.timeStamp)?e.timeStamp:performance.now(),gap=now-memoTap.at;
+      if(pointers.size>0)clearMemoTap();
+      else if(memoTap.note.el===memo&&gap>=0&&gap<=DELETE_TAP_INTERVAL)clearTimeout(memoTap.timer);
+      else clearMemoTap(true);
+    }
     if(pointers.size===0)tapCandidate={note:memo,id:e.pointerId,x:e.clientX,y:e.clientY,moved:false,panned:false};
-    else {if(tapCandidate)tapCandidate.panned=true;finishMemoMove(true);}
+    else {clearMemoTap();if(tapCandidate)tapCandidate.panned=true;finishMemoMove(true);}
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});(memo||viewport).setPointerCapture(e.pointerId);
     lastPointer={x:e.clientX,y:e.clientY};
     if(pointers.size===1&&memo) {
@@ -724,7 +865,7 @@
   });
   viewport.addEventListener('pointermove',e=>{
     if(memoPress&&memoPress.id===e.pointerId&&Math.hypot(e.clientX-memoPress.x,e.clientY-memoPress.y)>6)cancelMemoPress();
-    if(tapCandidate&&tapCandidate.id===e.pointerId&&Math.hypot(e.clientX-tapCandidate.x,e.clientY-tapCandidate.y)>6)tapCandidate.moved=true;
+    if(tapCandidate&&tapCandidate.id===e.pointerId&&Math.hypot(e.clientX-tapCandidate.x,e.clientY-tapCandidate.y)>6){tapCandidate.moved=true;clearMemoTap();}
     if(pointers.has(e.pointerId))pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(pointers.size>=2){
       const p=[...pointers.values()],center={x:(p[0].x+p[1].x)/2,y:(p[0].y+p[1].y)/2,distance:Math.max(8,Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y))};
@@ -745,13 +886,14 @@
     if(memoPress?.id===e.pointerId)cancelMemoPress();
     if(memoMove?.id===e.pointerId)finishMemoMove(e.type==='pointerup');
     pointers.delete(e.pointerId);panGesture=null;lastPointer=null;
+    if(e.type!=='pointerup'||tapCandidate?.moved||tapCandidate?.panned)clearMemoTap();
     if(e.type!=='pointerup'&&tapCandidate)tapCandidate.panned=true;renderCamera();
   }
   viewport.addEventListener('pointerup',release);viewport.addEventListener('pointercancel',release);viewport.addEventListener('lostpointercapture',release);
   viewport.addEventListener('pointerleave',()=>{lastPointer=null;});
   viewport.addEventListener('contextmenu',e=>{if(memoPress||memoMove||tapCandidate?.held)e.preventDefault();});
   viewport.addEventListener('wheel',e=>{
-    finishMemoMove(true);tapCandidate=null;
+    clearMemoTap();finishMemoMove(true);tapCandidate=null;
     e.preventDefault();cancelAnimationFrame(cameraAnimation);lastPointer=null;
     const factor=e.deltaMode===1?16:e.deltaMode===2?viewportGeometry.height:1;
     if(e.ctrlKey){
@@ -763,7 +905,7 @@
   },{passive:false});
   // WebKit emits GestureEvents for a trackpad pinch instead of ctrl+wheel.
   viewport.addEventListener('gesturestart',e=>{
-    e.preventDefault();finishMemoMove(true);if(tapCandidate)tapCandidate.panned=true;lastPointer=null;cancelAnimationFrame(cameraAnimation);
+    e.preventDefault();clearMemoTap();finishMemoMove(true);if(tapCandidate)tapCandidate.panned=true;lastPointer=null;cancelAnimationFrame(cameraAnimation);
     nativeGesture={scale:camera.scale,point:gesturePoint(e)};
   },{passive:false});
   viewport.addEventListener('gesturechange',e=>{
@@ -775,6 +917,7 @@
   viewport.addEventListener('keydown',e=>{
     if(e.key==='Escape'&&(memoMove||memoPress)){e.preventDefault();if(tapCandidate)tapCandidate.moved=true;finishMemoMove(false);return;}
     if(e.target!==viewport)return;
+    clearMemoTap();
     if(memoMove||memoPress)finishMemoMove(true);
     if(['+','=','-','_','0'].includes(e.key)){
       e.preventDefault();tapCandidate=null;
@@ -783,7 +926,9 @@
     const directions={ArrowLeft:[80,0],ArrowRight:[-80,0],ArrowUp:[0,80],ArrowDown:[0,-80]};
     if(directions[e.key]){e.preventDefault();cancelAnimationFrame(cameraAnimation);camera.x+=directions[e.key][0];camera.y+=directions[e.key][1];clampCamera();renderCamera();}
   });
-  window.addEventListener('blur',()=>{finishMemoMove(false);pointers.clear();panGesture=null;tapCandidate=null;lastPointer=null;});
+  window.addEventListener('blur',()=>{clearMemoTap();finishMemoMove(false);pointers.clear();panGesture=null;tapCandidate=null;lastPointer=null;});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearMemoTap();clearDeletionEffects();}});
+  window.addEventListener('pagehide',()=>{clearMemoTap();clearDeletionEffects();});
   let composing=false;
   input.addEventListener('compositionstart',()=>{composing=true;});input.addEventListener('compositionend',()=>{composing=false;});
   input.addEventListener('input',()=>{

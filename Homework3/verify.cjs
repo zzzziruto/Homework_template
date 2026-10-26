@@ -156,6 +156,7 @@ const gestureContext = {
   requestAnimationFrame:fn=>{const id=++timerId;moveFrames.set(id,fn);return id;},cancelAnimationFrame:id=>moveFrames.delete(id),
   clampCamera:()=>{},renderCamera:()=>{},announce:text=>announcements.push(text),updateBounds:()=>boundsCalls++,persist:()=>{saveCalls++;return true;},
   window:{addEventListener:(name,fn)=>{blurHandlers[name]=fn;}},
+  document:{hidden:false,addEventListener:()=>{}},memoTap:null,clearMemoTap:()=>{},clearDeletionEffects:()=>{},
   interact:(x,y,d)=>interactions.push({x,y,d})
 };
 const gestureSource=source.slice(source.indexOf('  function cancelMemoPress'),source.indexOf('  let composing=false'));
@@ -228,7 +229,7 @@ assert.equal(saveCalls,0);
 // Test the registered memo click handler after the complete browser event
 // sequence, including the implicit lost capture between pointerup and click.
 const clickHandlers={};let originalToggles=0;
-const clickContext={el:{addEventListener:(name,fn)=>clickHandlers[name]=fn},note:{archived:true},tapCandidate:gestureContext.tapCandidate,toggleOriginal:()=>originalToggles++};
+const clickContext={el:{addEventListener:(name,fn)=>clickHandlers[name]=fn},note:{archived:true},tapCandidate:gestureContext.tapCandidate,toggleOriginal:()=>originalToggles++,activateMemo:(note,event,single)=>single()};
 const clickSource=source.slice(source.indexOf("    el.addEventListener('click',e=>{"),source.indexOf("    el.addEventListener('keydown',e=>{"));
 vm.runInNewContext(clickSource,clickContext);
 for(const pointerType of ['mouse','touch']) {
@@ -324,3 +325,4 @@ renderContext.document.activeElement=null;renderContext.pointers.set(1,{});fakeE
 renderContext.updateVisibility();assert.equal(fakeElement.isConnected,true);
 renderContext.pointers.clear();renderContext.updateVisibility();assert.equal(fakeElement.isConnected,false);
 console.log('PASS: 120 camera updates -> 1 DOM commit, unchanged zoom label skipped, offscreen detach/restore, focus/pointer capture retained.');
+require('./verify-deletion.cjs');
