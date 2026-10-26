@@ -258,6 +258,16 @@
     }
     return {type,color};
   }
+  function assignSilhouetteStyle(seed,previousNotes,record={}) {
+    const style=silhouetteStyle(seed,previousNotes.at(-1)?.silhouetteColor,record.silhouetteColor);
+    if(['solid','outline'].includes(record.silhouetteType))style.type=record.silhouetteType;
+    // Only the last three creations matter, regardless of archive/zoom order.
+    const recent=previousNotes.slice(-3);
+    if(recent.length===3&&recent.every(note=>note.silhouetteType===recent[0].silhouetteType)) {
+      style.type=recent[0].silhouetteType==='solid'?'outline':'solid';
+    }
+    return style;
+  }
   function polygonArea(points) {
     return points.reduce((sum,p,i)=>{const q=points[(i+1)%points.length];return sum+p.x*q.y-q.x*p.y;},0)/2;
   }
@@ -414,7 +424,7 @@
   }
   function buildSilhouette(note) {
     if(note.silhouette)return;
-    const geometry=makeSilhouette(note.glyphs,note.width,note.height),style=silhouetteStyle(note.id,undefined,note.silhouetteColor);
+    const geometry=makeSilhouette(note.glyphs,note.width,note.height),style={type:note.silhouetteType,color:note.silhouetteColor};
     const svg=(tag,attributes)=>{const element=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const [key,value] of Object.entries(attributes))element.setAttribute(key,value);return element;};
     const group=svg('g',{'class':`silhouette silhouette-${style.type}`,color:style.color});
     const path=svg('path',{d:geometry.path,fill:style.type==='outline'?'none':'currentColor'});
@@ -434,7 +444,7 @@
   }
   function persist() {
     try {
-      localStorage.setItem(STORAGE,JSON.stringify(notes.map(({id,text,x,y,archived,created,silhouetteColor})=>({id,text,x,y,archived,created,silhouetteColor}))));
+      localStorage.setItem(STORAGE,JSON.stringify(notes.map(({id,text,x,y,archived,created,silhouetteColor,silhouetteType})=>({id,text,x,y,archived,created,silhouetteColor,silhouetteType}))));
       return true;
     } catch { announce('브라우저 저장 공간을 사용할 수 없어요. 현재 화면에서만 유지됩니다.'); return false; }
   }
@@ -576,7 +586,7 @@
   function addNote(record,restore=false) {
     const id=record.id||crypto.randomUUID();
     // Assign by creation order, even when notes finish archiving out of order.
-    const {color:silhouetteColor}=silhouetteStyle(id,notes.at(-1)?.silhouetteColor,record.silhouetteColor);
+    const {color:silhouetteColor,type:silhouetteType}=assignSilhouetteStyle(id,notes,record);
     const pattern=makePattern(record.text,id,inkMetrics);
     const el=document.createElement('article');el.className='memo';el.setAttribute('aria-label',`메모 ${notes.length+1}`);
     const sentence=document.createElement('p');sentence.className='sentence';sentence.style.width=`${Math.min(360,innerWidth-64)}px`;
@@ -599,7 +609,7 @@
     // User-arranged notes may intentionally overlap; restore their exact positions.
     const canRestore=restore&&Number.isFinite(record.x)&&Number.isFinite(record.y);
     const position=canRestore?record:positionNote(width,height);
-    const note={id,silhouetteColor,number:notes.length+1,text:record.text,created:record.created||Date.now(),x:position.x,y:position.y,width,height,archived:!!record.archived,progress:record.archived?1:0,target:record.archived?1:0,el,sentence,pattern:patternEl,action,ring,actionLabel,glyphs:[]};
+    const note={id,silhouetteColor,silhouetteType,number:notes.length+1,text:record.text,created:record.created||Date.now(),x:position.x,y:position.y,width,height,archived:!!record.archived,progress:record.archived?1:0,target:record.archived?1:0,el,sentence,pattern:patternEl,action,ring,actionLabel,glyphs:[]};
     el.style.left=`${note.x}px`;el.style.top=`${note.y}px`;el.style.width=`${width}px`;el.style.height=`${height}px`;meta.style.top=`${height-23}px`;
     const letterGroup=document.createElementNS('http://www.w3.org/2000/svg','g');letterGroup.classList.add('letter-pattern');patternEl.append(letterGroup);
     for(const glyph of pattern.glyphs){

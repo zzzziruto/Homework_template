@@ -4,7 +4,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(`${__dirname}/sketch.js`, 'utf8');
 const constants = source.slice(source.indexOf('  const INITIAL'), source.indexOf('  const STORAGE'));
 const functions = source.slice(source.indexOf('  function decompose'), source.indexOf('  function announce'));
-const api = vm.runInNewContext(`${constants}\n${functions}\n({decompose,makePattern,glyphBounds,glyphsOverlap,makeSilhouette,silhouetteStyle,roundedContourPath})`);
+const api = vm.runInNewContext(`${constants}\n${functions}\n({decompose,makePattern,glyphBounds,glyphsOverlap,makeSilhouette,silhouetteStyle,assignSilhouetteStyle,roundedContourPath})`);
 assert.equal(api.decompose('한').join(''), 'ㅎㅏㄴ');
 assert.equal(api.decompose('과').join(''), 'ㄱㅗㅏ');
 assert.equal(api.decompose('값').join(''), 'ㄱㅏㅂㅅ');
@@ -93,6 +93,33 @@ assert.equal(api.silhouetteStyle('saved-color','#7835da','#2c7dff').color,'#2c7d
 assert.notEqual(api.silhouetteStyle('saved-collision','#2c7dff','#2c7dff').color,'#2c7dff');
 assert(palette.has(api.silhouetteStyle('invalid-color',undefined,'invalid').color));
 console.log('PASS: consecutive memo colors differ across all 8 exclusions, legacy colors retained where possible, saved colors stable.');
+// Three consecutive variants force the opposite fourth; shorter or interrupted
+// runs keep the normal seeded choice. Check both variants and all short histories.
+for(let length=0;length<=5;length++)for(let mask=0;mask<2**length;mask++) {
+  const previous=Array.from({length},(_,index)=>({silhouetteType:mask&(1<<index)?'solid':'outline'}));
+  const recent=previous.slice(-3),forced=recent.length===3&&recent.every(note=>note.silhouetteType===recent[0].silhouetteType);
+  for(let seed=0;seed<20;seed++) {
+    const expected=forced?(recent[0].silhouetteType==='solid'?'outline':'solid'):api.silhouetteStyle(String(seed)).type;
+    assert.equal(api.assignSilhouetteStyle(String(seed),previous).type,expected);
+  }
+}
+const variantRecords=[];
+for(let index=0;index<1000;index++) {
+  const id=String(Math.floor(index/6)),style=api.assignSilhouetteStyle(id,variantRecords);
+  variantRecords.push({id,silhouetteType:style.type,silhouetteColor:style.color});
+  if(index>0)assert.notEqual(style.color,variantRecords[index-1].silhouetteColor);
+  if(index>=3)assert(new Set(variantRecords.slice(-4).map(record=>record.silhouetteType)).size>1,'Four matching variants must never occur');
+}
+const restoredVariants=[];
+for(const record of JSON.parse(JSON.stringify(variantRecords))) {
+  const style=api.assignSilhouetteStyle(record.id,restoredVariants,record);
+  assert.equal(style.type,record.silhouetteType);assert.equal(style.color,record.silhouetteColor);
+  restoredVariants.push({...record,silhouetteType:style.type,silhouetteColor:style.color});
+}
+assert.equal(api.assignSilhouetteStyle('saved-variant',[],{silhouetteType:'outline'}).type,'outline');
+assert.equal(api.assignSilhouetteStyle('saved-variant',Array.from({length:3},()=>({silhouetteType:'outline'})),{silhouetteType:'outline'}).type,'solid');
+assert.equal(api.assignSilhouetteStyle('invalid-variant',[],{silhouetteType:'blur'}).type,api.silhouetteStyle('invalid-variant').type);
+console.log('PASS: all short variant histories, forced opposite after 3 consecutive variants, 1000 creations and exact reload restoration, existing color rule retained.');
 const inside=(point,polygon)=>{
   let result=false;
   for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
@@ -184,7 +211,7 @@ const moveClasses=new Set(),moveWrites=[];
 const moveStyle={setProperty:()=>{}};
 Object.defineProperty(moveStyle,'transform',{get:()=>moveWrites.at(-1)||'',set:value=>moveWrites.push(value)});
 const moveElement={style:moveStyle,classList:{add:name=>moveClasses.add(name),remove:name=>moveClasses.delete(name)},setPointerCapture:()=>{}};
-const movingNote={silhouetteColor:'#ff99be',id:'moved-note',text:'위치를 기억한다.',archived:true,created:1,el:moveElement,x:100,y:200,width:200,height:120};
+const movingNote={silhouetteType:'solid',silhouetteColor:'#ff99be',id:'moved-note',text:'위치를 기억한다.',archived:true,created:1,el:moveElement,x:100,y:200,width:200,height:120};
 const storedPositions=[];gestureContext.STORAGE='test-memo-storage';gestureContext.localStorage={setItem:(key,value)=>storedPositions.push(JSON.parse(value))};
 vm.runInNewContext(source.slice(source.indexOf('  function persist()'),source.indexOf('  function refreshCount')),gestureContext);
 const actualPersist=gestureContext.persist;gestureContext.persist=()=>{saveCalls++;return actualPersist();};
@@ -226,6 +253,7 @@ assert.equal(interactions.length,interactionsBeforeDrag,'Moving a memo must not 
 handlers.pointerup(notePointer('pointerup',1,130,115));
 assert.equal(moveStyle.left,'220px');assert.equal(moveStyle.top,'260px');assert.equal(moveStyle.transform,'');assert(!moveClasses.has('dragging'));assert.equal(saveCalls,1);assert.equal(boundsCalls,1);assert.equal(storedPositions.at(-1)[0].x,220);assert.equal(storedPositions.at(-1)[0].y,260);
 assert.equal(storedPositions.at(-1)[0].silhouetteColor,'#ff99be','Saving a position must retain the assigned silhouette color');
+assert.equal(storedPositions.at(-1)[0].silhouetteType,'solid','Saving a position must retain the assigned silhouette variant');
 clickContext.tapCandidate={...gestureContext.tapCandidate,note:clickContext.el};const heldToggleCount=originalToggles;clickHandlers.click({detail:1});assert.equal(originalToggles,heldToggleCount,'A drag release must not toggle the original');
 handlers.lostpointercapture(notePointer('lostpointercapture',1,130,115));assert.equal(saveCalls,1,'Lost capture after release must not undo or save twice');
 // Cancellation and Escape restore the exact starting position.
