@@ -119,6 +119,14 @@ for(const record of JSON.parse(JSON.stringify(variantRecords))) {
 assert.equal(api.assignSilhouetteStyle('saved-variant',[],{silhouetteType:'outline'}).type,'outline');
 assert.equal(api.assignSilhouetteStyle('saved-variant',Array.from({length:3},()=>({silhouetteType:'outline'})),{silhouetteType:'outline'}).type,'solid');
 assert.equal(api.assignSilhouetteStyle('invalid-variant',[],{silhouetteType:'blur'}).type,api.silhouetteStyle('invalid-variant').type);
+// Removing a separator may bring equal saved colors/variants together. Restoring
+// those survivors keeps their assignments; a newly created memo still uses limits.
+const survivor={id:'survivor',silhouetteType:'solid',silhouetteColor:'#ff99be'};
+const savedTail=Array.from({length:3},(_,index)=>({...survivor,id:`saved-${index}`}));
+const restoredSurvivor=api.assignSilhouetteStyle(survivor.id,savedTail,survivor,true);
+assert.equal(restoredSurvivor.type,'solid');assert.equal(restoredSurvivor.color,'#ff99be');
+const afterDeletion=api.assignSilhouetteStyle('new-after-deletion',[...savedTail,survivor]);
+assert.equal(afterDeletion.type,'outline');assert.notEqual(afterDeletion.color,'#ff99be');
 console.log('PASS: all short variant histories, forced opposite after 3 consecutive variants, 1000 creations and exact reload restoration, existing color rule retained.');
 const inside=(point,polygon)=>{
   let result=false;

@@ -247,7 +247,7 @@
     return {glyphs,width:Math.max(160,envelope.right-envelope.left+padding*2),height:Math.max(100,envelope.bottom-envelope.top+padding*2)};
   }
 
-  function silhouetteStyle(seed,previousColor,savedColor) {
+  function silhouetteStyle(seed,previousColor,savedColor,preserveSaved=false) {
     const colors=['#2c7dff','#7835da','#ff99be','#ff5d31','#ff9a3e','#ccff66','#b19375','#4c292f'];
     const random=seededRandom(`silhouette:${seed}`);
     // Keep the seeded shape variant and existing colors unless two consecutive
@@ -255,15 +255,19 @@
     const choice=Math.floor(random()*3),seedColor=colors[Math.floor(random()*colors.length)];
     const type=choice===2?(random()<.5?'solid':'outline'):['solid','outline'][choice];
     let color=colors.includes(savedColor)?savedColor:seedColor;
-    if(color===previousColor) {
+    if(color===previousColor&&!(preserveSaved&&colors.includes(savedColor))) {
       const available=colors.filter(candidate=>candidate!==previousColor);
       color=available[Math.floor(random()*available.length)];
     }
     return {type,color};
   }
-  function assignSilhouetteStyle(seed,previousNotes,record={}) {
-    const style=silhouetteStyle(seed,previousNotes.at(-1)?.silhouetteColor,record.silhouetteColor);
-    if(['solid','outline'].includes(record.silhouetteType))style.type=record.silhouetteType;
+  function assignSilhouetteStyle(seed,previousNotes,record={},restore=false) {
+    const style=silhouetteStyle(seed,previousNotes.at(-1)?.silhouetteColor,record.silhouetteColor,restore);
+    if(['solid','outline'].includes(record.silhouetteType)) {
+      style.type=record.silhouetteType;
+      // Deleting a separator must not restyle previously assigned survivors.
+      if(restore)return style;
+    }
     // Only the last three creations matter, regardless of archive/zoom order.
     const recent=previousNotes.slice(-3);
     if(recent.length===3&&recent.every(note=>note.silhouetteType===recent[0].silhouetteType)) {
@@ -594,7 +598,7 @@
     const id=record.id||crypto.randomUUID();
     const number=(notes.at(-1)?.number||0)+1;
     // Assign by creation order, even when notes finish archiving out of order.
-    const {color:silhouetteColor,type:silhouetteType}=assignSilhouetteStyle(id,notes,record);
+    const {color:silhouetteColor,type:silhouetteType}=assignSilhouetteStyle(id,notes,record,restore);
     const pattern=makePattern(record.text,id,inkMetrics);
     const el=document.createElement('article');el.className='memo';el.setAttribute('aria-label',`메모 ${number}`);
     const sentence=document.createElement('p');sentence.className='sentence';sentence.style.width=`${Math.min(360,innerWidth-64)}px`;
