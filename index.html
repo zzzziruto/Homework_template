@@ -38,6 +38,25 @@
         cursor: pointer;
         color: blue;
       }
+      #menu .project-launch {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 5px;
+        margin: 22px -10px 0;
+        padding: 13px 5px;
+        border: 1px solid #222;
+        border-radius: 12px;
+        background: #f6f5f2;
+        color: #222;
+        text-decoration: none;
+        text-align: center;
+      }
+      .project-launch .project-number { font-size: 10px; color: #777; }
+      .project-launch strong { font-size: 13px; font-weight: 500; }
+      .project-launch .project-open { font-size: 10px; }
+      #menu .project-launch:hover { background: #b0ff5b; }
+      #menu .project-launch:focus-visible { outline: 2px solid #222; outline-offset: 4px; }
       /* iframe 영역: 메뉴(100px)를 뺀 나머지 화면 전체 */
       #stage {
         position: fixed;
@@ -59,7 +78,11 @@
     <div id="menu">
       <a onclick="loadHomework('Homework1')">Homework1</a>
       <a onclick="loadHomework('Homework2')">Homework2</a>
-      <a onclick="loadHomework('Homework3')">Homework3</a>
+      <a class="project-launch" href="Homework3/index.html?v=sai-20261026" target="_blank" rel="noopener noreferrer" aria-label="Homework3 중간과제 새 창에서 열기">
+        <span class="project-number">Homework3</span>
+        <strong>중간과제</strong>
+        <span class="project-open">새 창 열기 ↗</span>
+      </a>
     </div>
 
     <div id="stage">

@@ -1,36 +1,52 @@
 <!doctype html>
-<html>
+<html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <!-- 모바일 필수: 폰에서 PC용 화면처럼 축소되는 것 방지 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
-    <title>Homework3</title>
-    <script src="https://cdn.jsdelivr.net/npm/p5@2/lib/p5.min.js"></script>
-    <style>
-      html, body {
-        height: 100%;
-        margin: 0;
-        overflow: hidden;
-      }
-      /* 터치 필수: 브라우저가 스크롤/확대 대신 코드에 터치를 넘기도록 함.
-         iOS Safari는 canvas가 아니라 body에 걸어야 인정함 */
-      body {
-        touch-action: none;
-        overscroll-behavior: none;
-        -webkit-user-select: none;
-        user-select: none;
-        -webkit-touch-callout: none;
-      }
-      canvas {
-        touch-action: none;
-      }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f5f2" />
+    <title>사이 — 문장이 머무는 곳</title>
+    <link rel="stylesheet" href="style.css?v=sai-20261026" />
+    <script src="sketch.js?v=sai-20261026" defer></script>
   </head>
   <body>
-    <script>
-      // 터치 필수: Safari는 CSS만으로는 드래그 스크롤을 완전히 못 막아서 스크립트로 한 번 더 차단
-      document.addEventListener("touchmove", function (e) { e.preventDefault(); }, { passive: false });
-    </script>
-    <script src="sketch.js"></script>
+    <header class="masthead">
+      <a class="wordmark" href="#" aria-label="사이, 메모 전체 보기">사이<span>SAI</span></a>
+      <p class="tagline">문장이 머무는 또 다른 방식</p>
+      <div class="archive-count"><span class="status-dot"></span><span id="archive-count">0개의 기억</span></div>
+    </header>
+
+    <main id="viewport" aria-label="확장되는 메모 캔버스" tabindex="0">
+      <div id="world"></div>
+      <section id="intro" class="intro">
+        <span class="eyebrow">A PLACE FOR YOUR THOUGHTS</span>
+        <h1>흘려보내기 아쉬운<br />생각이 있나요.</h1>
+        <p>문장을 적고, 그 주위를 천천히 쓸어보세요.<br />글자는 흩어지는 대신, 새로운 질서로 남습니다.</p>
+        <button id="example" class="text-button">예시 문장으로 시작 <span aria-hidden="true">↗</span></button>
+        <div class="intro-rule" aria-hidden="true"></div>
+        <span class="intro-caption">쓰고 &nbsp; → &nbsp; 쓸어보고 &nbsp; → &nbsp; 간직하기</span>
+      </section>
+    </main>
+
+    <aside class="canvas-tools" aria-label="캔버스 탐색">
+      <button id="overview" title="메모 전체 보기" aria-label="메모 전체 보기">↙↗</button>
+      <button id="home" title="최근 메모로 이동" aria-label="최근 메모로 이동">⌖</button>
+      <span id="position">65%</span>
+    </aside>
+
+    <div class="composer-area">
+      <p id="gesture-hint" class="gesture-hint">두 손가락으로 이동 · 벌리거나 오므려 확대/축소 <span>↔</span></p>
+      <form id="composer">
+        <label class="sr-only" for="memo-input">남기고 싶은 문장</label>
+        <textarea id="memo-input" rows="1" maxlength="280" placeholder="클릭(터치)하여 입력" spellcheck="false"></textarea>
+        <span id="input-count" aria-hidden="true">0 / 280</span>
+        <button id="send" type="submit" disabled aria-label="메모 전송">
+          <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M10.2 3.1C10.95 1.6 13.05 1.6 13.8 3.1L21.6 18.7C22.35 20.2 21.26 22 19.58 22H4.42C2.74 22 1.65 20.2 2.4 18.7Z" fill="currentColor" />
+          </svg>
+        </button>
+      </form>
+      <div class="composer-foot"><span>생각은 자유롭게, 글자는 질서 있게.</span><span>Enter 전송 <i>·</i> Shift + Enter 줄바꿈</span></div>
+    </div>
+    <p id="announcement" class="toast" role="status" aria-live="polite"></p>
   </body>
 </html>
