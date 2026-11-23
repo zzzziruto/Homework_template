@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#000000"><title>DanceTogether</title><link rel="stylesheet" href="style.css"><script type="module" src="app.js"></script></head>
+<body>
+<section id="monitor" class="screen monitor hidden"><div class="monitor-inner"><p class="monitor-eyebrow">컴퓨터 · 연결 상태</p><h1>두 모바일 기기로<br>함께 시작해요.</h1><p>컴퓨터는 서버를 실행하고 연결 상태만 보여줘요.<br>휴대폰·태블릿 두 대에서 아래의 같은 주소를 열어주세요.</p><div id="mobile-links"></div><div class="mobile-status"><strong id="mobile-count">0 / 2</strong><span id="mobile-phase">모바일 기기를 기다리는 중</span></div><p class="monitor-footnote">컴퓨터와 두 기기를 같은 Wi-Fi에 연결하고<br>서버 터미널을 켜두세요.</p></div></section>
+<main id="waiting" class="screen waiting"><div><p id="waiting-note">친구와 연결하는 중…</p><h1 id="waiting-title">LET’S DANCE!</h1><p id="waiting-description">휴대폰·태블릿 두 대가 접속하면 3초 뒤 역할이 정해져요.</p><button id="reconnect" class="hidden">다시 연결</button></div></main>
+<section id="role" class="screen role hidden"><div><p>You are...</p><h1 id="role-title"></h1></div></section>
+<section id="dancer" class="screen dancer hidden"><div id="dancer-number" class="big-number" aria-live="polite">100</div><div id="motion-tools" class="motion-tools"><button id="enable-motion">움직임 감지 켜기</button><p id="motion-message"></p><button id="demo-shake" class="quiet">시연용 · 터치로 1회</button></div><button class="restart hidden">한 번 더</button></section>
+<section id="dj" class="screen dj hidden"><div id="controller" class="controller" aria-label="DJ 박스">
+ <img src="assets/dj-original.png" alt="회색 DJ 컨트롤러" draggable="false">
+ <div class="wheel wheel-left" data-wheel="L" role="slider" tabindex="0" aria-label="왼쪽 스크래치 원판" aria-valuemin="0" aria-valuemax="360" aria-valuenow="0"><div class="disc"><i></i></div></div>
+ <div class="wheel wheel-right" data-wheel="R" role="slider" tabindex="0" aria-label="오른쪽 스크래치 원판" aria-valuemin="0" aria-valuemax="360" aria-valuenow="0"><div class="disc"><i></i></div></div>
+ <div class="slider volume-left" data-slider="volumeL" role="slider" tabindex="0" aria-label="왼쪽 볼륨" aria-valuemin="0" aria-valuemax="100" aria-valuenow="80"><span class="rail"></span><span class="handle"></span></div>
+ <div class="slider volume-right" data-slider="volumeR" role="slider" tabindex="0" aria-label="오른쪽 볼륨" aria-valuemin="0" aria-valuemax="100" aria-valuenow="30"><span class="rail"></span><span class="handle"></span></div>
+ <div class="slider tempo-left" data-slider="tempoL" role="slider" tabindex="0" aria-label="왼쪽 템포" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><span class="rail"></span><span class="handle"></span></div>
+ <div class="slider tempo-right" data-slider="tempoR" role="slider" tabindex="0" aria-label="오른쪽 템포" aria-valuemin="0" aria-valuemax="100" aria-valuenow="10"><span class="rail"></span><span class="handle"></span></div>
+ <div class="pads pads-left"><button data-pad="L0" aria-label="왼쪽 패드 1"></button><button data-pad="L1" aria-label="왼쪽 패드 2"></button><button data-pad="L2" aria-label="왼쪽 패드 3"></button></div>
+ <div class="pads pads-right"><button data-pad="R0" aria-label="오른쪽 패드 1"></button><button data-pad="R1" aria-label="오른쪽 패드 2"></button><button data-pad="R2" aria-label="오른쪽 패드 3"></button></div>
+ <button class="play play-left" data-play="L" aria-label="왼쪽 원판 회전 켜기">▶/Ⅱ</button><button class="play play-right" data-play="R" aria-label="오른쪽 원판 회전 켜기">▶/Ⅱ</button>
+ <div id="dj-number" class="dj-number">100</div>
+ </div><p id="rotate-hint">폰을 가로로 돌려주세요.</p><button class="restart hidden">한 번 더</button></section>
+<div class="topbar"><span id="connection"></span><button id="help-button" aria-label="사용 방법">?</button></div>
+<canvas id="confetti" aria-hidden="true"></canvas>
+<dialog id="help"><h2>LET’S PLAY!</h2><p><b>DANCER</b><br>움직임 감지를 켜고 폰을 쥔 채 춤춰요. 한 번 흔들면 숫자가 하나 줄고 색이 바뀌어요.</p><p><b>DJ</b><br>원판을 앞뒤로 돌리고, 패드를 눌러요. 템포와 볼륨은 손잡이를 위아래로 밀어요.</p><p>100회를 함께 채우면 두 화면에 콩페티가 내려요.</p><button id="open-network" class="quiet">두 폰 연결 · 움직임 설정</button><div class="dialog-actions"><button class="close-dialog">닫기</button><button id="leave" class="quiet">이 기기 나가기</button></div></dialog>
+<dialog id="network"><h2>두 폰 연결</h2><p>컴퓨터와 두 폰을 같은 Wi-Fi에 연결하고, 터미널에 표시된 휴대폰 주소를 열어요. 서버 터미널은 켜둬야 해요.</p><div id="addresses"></div><details><summary>아이폰 움직임 감지 설정</summary><ol><li>HTTP 주소에서 <a href="dance.cer">이 컴퓨터의 개발용 인증서</a>를 내려받아요.</li><li>설정 → 일반 → VPN 및 기기 관리에서 <b>Yejis Dance Local</b> 프로파일을 설치해요.</li><li>설정 → 일반 → 정보 → 인증서 신뢰 설정에서 해당 인증서의 신뢰를 켜요.</li><li>HTTPS 주소로 다시 열고 ‘움직임 감지 켜기’를 눌러 권한을 허용해요.</li></ol><p>이전 프로토타입의 인증서와는 달라요. 이번 컴퓨터에서 생성한 인증서를 사용해주세요. 시연 후 해당 프로파일을 삭제할 수 있어요.</p></details><button class="close-dialog">닫기</button></dialog>
+<div id="toast" role="status" class="toast hidden"></div>
+</body></html>
