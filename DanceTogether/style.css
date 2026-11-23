@@ -132,16 +132,27 @@ button:focus-visible,
 .motion-tools .quiet {
   color: #000;
 }
-.restart {
+.complete-actions {
   position: absolute;
-  bottom: max(22px, env(safe-area-inset-bottom));
+  bottom: max(16px, env(safe-area-inset-bottom));
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  white-space: nowrap;
+  z-index: 6;
+}
+.complete-actions button {
   background: #000;
   color: white;
   border: 1px solid #555;
-  font-size: 13px;
-  z-index: 6;
+  font-size: 1rem;
+  min-height: 44px;
+}
+.complete-actions .leave-session {
+  background: #fff;
+  color: #000;
+  border-color: #fff;
 }
 .topbar {
   position: fixed;

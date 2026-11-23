@@ -54,3 +54,24 @@ test('commands from a previous round cannot change a new round',()=>{
 test('a new host can advance a late clock without assigning two identical roles',()=>{
  const f=fixture();f.tick();f.tick(20000);assert.equal(f.state.phase,'playing');assert.equal(new Set(f.state.members.map(m=>m.role)).size,2);
 });
+function complete(f){f.tick();f.tick(5000);for(let i=0;i<100;i++)f.send(a,'shake',{event:'complete-'+i},5320+i*320);}
+test('either role can leave completion and the other phone keeps its completion screen until it leaves',()=>{
+ for(const first of [a,b]){
+  const f=fixture();complete(f);const second=first===a?b:a;const role=viewSession(f.state,second).role;
+  f.send(first,'leave',{},40000);f.tick(40100);
+  assert.equal(viewSession(f.state,first).admitted,false);assert.equal(f.state.members.length,1);
+  assert.equal(viewSession(f.state,second).phase,'complete');assert.equal(viewSession(f.state,second).role,role);
+  f.send(second,'leave',{},40200);f.tick(40300);
+  assert.equal(f.state.members.length,0);assert.equal(f.state.phase,'waiting');
+ }
+});
+test('a replacement after completion starts a fresh round with fresh roles and counts',()=>{
+ const f=fixture();complete(f);const round=f.state.round;f.send(a,'leave',{},40000);
+ f.peers[0]=peer(c,40100);f.tick(40100);
+ assert.equal(f.state.phase,'countdown');assert.equal(f.state.round,round+1);assert.equal(f.state.remaining,100);
+ assert.deepEqual(f.state.members.map(m=>m.id),[b,c]);assert.ok(f.state.members.every(m=>m.role===null));
+});
+test('an explicit inactive profile releases its slot without waiting for the stale-device timeout',()=>{
+ const f=fixture();complete(f);f.peers[0].active=false;f.tick(40000);
+ assert.deepEqual(f.state.members.map(m=>m.id),[b]);assert.equal(viewSession(f.state,b).phase,'complete');
+});

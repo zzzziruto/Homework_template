@@ -24,3 +24,18 @@ test('insecure or unsupported devices cannot silently bypass permissions',async(
   const w=fake();w.isSecureContext=false;await assert.rejects(createMotionSensor(w).enable(),/HTTPS/);
   w.isSecureContext=true;delete w.DeviceMotionEvent;await assert.rejects(createMotionSensor(w).enable(),/지원하지/);
 });
+test('leaving while the permission prompt is open cancels detection, even if permission arrives later',async()=>{
+  let grant;let reads=0;const statuses=[];
+  const w=fake(()=>new Promise(resolve=>{grant=resolve;}));
+  const s=createMotionSensor(w,{onSample:()=>reads++,onStatus:value=>statuses.push(value)});
+  const pending=s.enable();const cancelled=assert.rejects(pending,/중지/);
+  s.stop();await cancelled;grant('granted');await Promise.resolve();await Promise.resolve();sample(w);
+  assert.equal(s.enabled,false);assert.equal(reads,0);assert.equal(statuses.at(-1),'off');
+});
+test('stopping during signal detection does not let old cleanup cancel an immediate retry',async()=>{
+  const w=fake();const s=createMotionSensor(w,{timeoutMs:100});
+  const old=s.enable();const cancelled=assert.rejects(old,/중지/);
+  await Promise.resolve();await Promise.resolve();await Promise.resolve();s.stop();
+  const retry=s.enable();await cancelled;await Promise.resolve();await Promise.resolve();sample(w);
+  await retry;assert.equal(s.enabled,true);s.stop();
+});

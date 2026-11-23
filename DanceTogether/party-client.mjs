@@ -11,9 +11,11 @@ export class PartyClient{
  constructor({party=globalThis.p5party,device,mobile,room=roomForLocation(location),onState=()=>{},onStatus=()=>{},onFull=()=>{}}){
   Object.assign(this,{party,device,mobile,room,onState,onStatus,onFull});
   this.started=false;this.ready=false;this.active=true;this.me=null;this.shared=null;this.hostState=null;this.wasHost=false;this.peers=new Map();
+  this.destroyed=false;this.leaving=false;
   this.seq=0;this.queue=[];this.current=null;this.stream=unique();this.offset=0;this.clockSynced=false;this.lastSnapshotAt=0;this.lastRevision=-1;this.lastEpoch=null;this.status=null;
  }
  async connect(){
+  if(this.destroyed)throw new Error('다시 연결 버튼으로 새로 시작해주세요.');
   if(this.ready){this.join();return;}
   if(this.started)return this.connecting;
   this.started=true;
@@ -21,34 +23,39 @@ export class PartyClient{
    if(!this.party)throw new Error('연결 파일을 불러오지 못했어요. 새로고침해주세요.');
    this.onStatus('connecting');
    await this.party.connect('wss://demoserver.p5party.org','yeji-dance-together-pages-v4',this.room);
+   if(this.destroyed)return;
    this.shared=await this.party.loadShared('session-v4',{snapshot:createSession(unique())});
+   if(this.destroyed)return;
    this.me=await this.party.loadMyShared({profile:{}});
-   this.party.subscribe('clock-ping',data=>{
+   if(this.destroyed)return;
+   this.onClockPing=data=>{
     if(this.party.isHost()&&data&&typeof data.stream==='string'&&Number.isFinite(data.sentAt))this.party.emit('clock-pong',{stream:data.stream,sentAt:data.sentAt,hostAt:Date.now()});
-   });
-   this.party.subscribe('clock-pong',data=>{
+   };
+   this.onClockPong=data=>{
     if(data?.stream!==this.stream||!Number.isFinite(data.hostAt)||!Number.isFinite(data.sentAt))return;
     const now=Date.now();if(now-data.sentAt>2000)return;
     this.offset=data.hostAt-(data.sentAt+now)/2;this.clockSynced=true;
-   });
+   };
+   this.party.subscribe('clock-ping',this.onClockPing);
+   this.party.subscribe('clock-pong',this.onClockPong);
    this.ready=true;this.join();
    this.timer=setInterval(()=>this.tick(),50);
    this.heartbeat=setInterval(()=>this.pulse(),1000);
    this.clockTimer=setInterval(()=>this.syncClock(),5000);
    this.pulse();this.tick();this.syncClock();
-  })().catch(e=>{this.onStatus('error');throw e;});
+  })().catch(e=>{if(!this.destroyed)this.onStatus('error');throw e;});
   return this.connecting;
  }
  join(){
-  if(!this.ready)return;
+  if(!this.ready||this.leaving||this.destroyed)return;
   this.active=true;this.stream=unique();this.seq=0;this.rejectQueue('연결을 다시 시작했어요.');this.lastFull=false;
   this.profile={protocol:PROTOCOL,id:this.device,stream:this.stream,kind:this.mobile?'mobile':'observer',active:true,joinedAt:Date.now(),ping:0,command:null};
   this.pulse();
  }
- pulse(){if(!this.me)return;this.profile.ping=Date.now();this.me.profile=clone(this.profile);}
- syncClock(){if(this.ready)this.party.emit('clock-ping',{stream:this.stream,sentAt:Date.now()});}
+ pulse(){if(!this.me||this.destroyed)return;this.profile.ping=Date.now();this.me.profile=clone(this.profile);}
+ syncClock(){if(this.ready&&!this.leaving&&!this.destroyed)this.party.emit('clock-ping',{stream:this.stream,sentAt:Date.now()});}
  tick(){
-  if(!this.ready)return;
+  if(!this.ready||this.destroyed)return;
   const now=Date.now();const host=this.party.isHost();
   if(host){
    if(!this.wasHost||!this.hostState){this.hostState=clone(this.shared.snapshot);
@@ -89,7 +96,7 @@ export class PartyClient{
   }
  }
  request(name,body={}){
-  if(!this.ready||!this.active)return Promise.reject(new Error('먼저 다시 연결해주세요.'));
+  if(!this.ready||!this.active||this.destroyed||(this.leaving&&name!=='leave'))return Promise.reject(new Error('먼저 다시 연결해주세요.'));
   return new Promise((resolve,reject)=>{this.queue.push({name,body,resolve,reject});this.nextCommand();});
  }
  nextCommand(){
@@ -99,14 +106,28 @@ export class PartyClient{
   this.profile.command={seq:item.seq,name:item.name,body:item.body,epoch:snapshot.epoch,round:snapshot.round};this.pulse();
   item.timer=setTimeout(()=>{
    if(this.current!==item)return;this.current=null;this.profile.command=null;this.pulse();item.reject(new Error('연결이 지연되고 있어요. 다시 시도해주세요.'));this.nextCommand();
-  },15000);
+  },item.name==='leave'?1500:15000);
  }
  rejectQueue(message){
   if(this.current){clearTimeout(this.current.timer);this.current.reject(new Error(message));this.current=null;}
   for(const item of this.queue)item.reject(new Error(message));this.queue=[];
  }
  async leave(){
-  try{await this.request('leave');}finally{this.active=false;if(this.profile){this.profile.active=false;this.pulse();}this.rejectQueue('이 기기에서 나왔어요.');}
+  if(this.destroyed||this.leaving)return;
+  this.leaving=true;this.rejectQueue('이 기기에서 나왔어요.');
+  try{if(this.ready&&this.active)await this.request('leave');}
+  finally{this.destroy();}
  }
- destroy(){clearInterval(this.timer);clearInterval(this.heartbeat);clearInterval(this.clockTimer);this.rejectQueue('연결이 종료됐어요.');this.party.disconnect();}
+ destroy(){
+  if(this.destroyed)return;
+  this.active=false;
+  if(this.profile){this.profile.active=false;this.profile.command=null;this.pulse();}
+  this.destroyed=true;this.ready=false;
+  clearInterval(this.timer);clearInterval(this.heartbeat);clearInterval(this.clockTimer);
+  this.rejectQueue('연결이 종료됐어요.');
+  if(this.onClockPing)this.party.unsubscribe('clock-ping',this.onClockPing);
+  if(this.onClockPong)this.party.unsubscribe('clock-pong',this.onClockPong);
+  this.party?.disconnect();
+  this.me=null;this.profile=null;this.shared=null;this.hostState=null;this.device=null;this.stream=null;this.peers.clear();
+ }
 }

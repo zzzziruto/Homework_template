@@ -1,12 +1,13 @@
 // Permission must be requested in the original tap handler, before any network await.
 export function createMotionSensor(win,{onSample=()=>{},onStatus=()=>{},timeoutMs=6000}={}){
-  let enabled=false,pending=null,listener=null,timer=null,rejectPending=null;
+  let enabled=false,pending=null,listener=null,timer=null,rejectPending=null,generation=0;
   const valid=event=>[event.acceleration,event.accelerationIncludingGravity].some(a=>a&&[a.x,a.y,a.z].every(Number.isFinite));
   function stop(){
+    generation++;
     if(listener)win.removeEventListener('devicemotion',listener);
     listener=null;enabled=false;clearTimeout(timer);
     if(rejectPending)rejectPending(new Error('움직임 감지가 중지됐어요. 다시 시작해주세요.'));
-    pending=null;rejectPending=null;
+    pending=null;rejectPending=null;onStatus('off');
   }
   function enable(){
     if(enabled)return Promise.resolve();if(pending)return pending;
@@ -16,8 +17,11 @@ export function createMotionSensor(win,{onSample=()=>{},onStatus=()=>{},timeoutM
     let permission;
     try{permission=typeof Motion.requestPermission==='function'?Motion.requestPermission():Promise.resolve('granted');}
     catch{permission=Promise.reject(new Error('움직임 권한을 요청하지 못했어요. 시작하기를 다시 눌러주세요.'));}
+    const attempt=++generation;
+    const cancelled=new Promise((resolve,reject)=>{rejectPending=reject;});
     onStatus('checking');
-    pending=Promise.resolve(permission).then(granted=>{
+    pending=Promise.race([permission,cancelled]).then(granted=>{
+      if(attempt!==generation)throw new Error('움직임 감지가 중지됐어요. 다시 시작해주세요.');
       if(granted!=='granted')throw new Error('움직임 접근이 거부됐어요. 이 사이트의 움직임 접근을 허용한 뒤 다시 시작해주세요.');
       return new Promise((resolve,reject)=>{
         rejectPending=reject;
@@ -30,9 +34,10 @@ export function createMotionSensor(win,{onSample=()=>{},onStatus=()=>{},timeoutM
         win.addEventListener('devicemotion',listener);
       });
     }).catch(error=>{
+      if(attempt!==generation)throw error;
       if(listener)win.removeEventListener('devicemotion',listener);
       listener=null;enabled=false;clearTimeout(timer);onStatus('off');throw error;
-    }).finally(()=>{pending=null;rejectPending=null;});
+    }).finally(()=>{if(attempt===generation){pending=null;rejectPending=null;}});
     return pending;
   }
   return {enable,stop,get enabled(){return enabled;}};

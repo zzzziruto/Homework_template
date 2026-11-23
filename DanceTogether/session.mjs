@@ -11,7 +11,10 @@ function begin(s,now){s.phase='countdown';s.deadline=now+3000;s.remaining=100;s.
 function command(s,member,peer,c,now){
  if(c.epoch!==s.epoch)throw new Error('연결 정보가 바뀌었어요. 다시 시도해주세요.');
  if(c.name==='leave'){
-  s.excluded=[...s.excluded,peer.stream].slice(-32);s.round++;s.members=s.members.filter(m=>m.id!==member.id);s.phase='waiting';s.deadline=null;s.members.forEach(m=>m.role=null);s.controls.pressedL=s.controls.pressedR=null;return;
+  s.excluded=[...s.excluded,peer.stream].slice(-32);s.members=s.members.filter(m=>m.id!==member.id);
+  // The other phone must still be able to leave from its completion screen.
+  if(s.phase!=='complete'||!s.members.length){s.round++;s.phase='waiting';s.deadline=null;s.members.forEach(m=>m.role=null);}
+  s.controls.pressedL=s.controls.pressedR=null;return;
  }
  if(c.round!==s.round)throw new Error('새 라운드가 시작됐어요. 다시 시도해주세요.');
  if(c.name==='restart'){
@@ -54,13 +57,16 @@ export function stepSession(previous,profiles,now,random=Math.random){
  for(const m of [...s.members]){
   const p=mobile.get(m.id);
   if(p){m.lastSeen=p.observedAt;m.stream=p.stream;}
-  else if(now-m.lastSeen>=60000){s.members=s.members.filter(x=>x.id!==m.id);removed=true;}
+  else if(all.some(p=>p.id===m.id&&p.stream===m.stream&&p.active===false)||now-m.lastSeen>=60000){s.members=s.members.filter(x=>x.id!==m.id);removed=true;}
  }
- if(removed){s.phase='waiting';s.deadline=null;s.members.forEach(m=>m.role=null);s.controls.pressedL=s.controls.pressedR=null;s.round++;}
+ if(removed){if(s.phase!=='complete'||!s.members.length){s.phase='waiting';s.deadline=null;s.members.forEach(m=>m.role=null);s.round++;}s.controls.pressedL=s.controls.pressedR=null;}
  const newcomers=[...mobile.values()].sort((a,b)=>a.joinedAt-b.joinedAt||a.id.localeCompare(b.id));
  for(const p of newcomers){
   if(s.members.length===2)break;
-  if(!s.members.some(m=>m.id===p.id))s.members.push({id:p.id,stream:p.stream,role:null,lastSeen:p.observedAt});
+  if(!s.members.some(m=>m.id===p.id)){
+   if(s.phase==='complete'){s.round++;s.phase='waiting';s.deadline=null;s.members.forEach(m=>m.role=null);}
+   s.members.push({id:p.id,stream:p.stream,role:null,lastSeen:p.observedAt});
+  }
  }
  const bothLive=s.members.length===2&&s.members.every(m=>mobile.has(m.id));
  if(s.phase==='waiting'&&bothLive)begin(s,now);
