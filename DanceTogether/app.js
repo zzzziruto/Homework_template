@@ -1,3 +1,5 @@
+import { PartyClient } from './party-client.mjs';
+import { createMotionSensor } from './motion.mjs';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const DEVICE_KEY = 'dance-together-v3-device';
@@ -22,18 +24,12 @@ function notify(message) {
   $('#toast').textContent=message; $('#toast').classList.remove('hidden');
   clearTimeout(messageTimer);messageTimer=setTimeout(()=>$('#toast').classList.add('hidden'),4000);
 }
-async function api(name, body, method='POST') {
-  const response=await fetch('/api/'+name,{method,headers:{'Content-Type':'application/json','X-Device-ID':device},...(method==='POST'?{body:JSON.stringify(body||{})}:{})});
-  const data=await response.json();
-  if(!response.ok) { const error=new Error(data.error||'서버에 연결할 수 없어요.');error.status=response.status;throw error; }
-  return data;
-}
 function accept(next) {
-  if(state && next.revision<state.revision)return;
+  if(state && next.epoch===state.epoch && next.revision<state.revision)return;
   const changed=state && state.remaining!==next.remaining;
   const newRound=state && state.round!==next.round;
   clockOffset=next.serverTime*1000-Date.now();
-  state=next;online=true;
+  state=next;
   if(newRound){celebration='';clearConfetti();}
   render(changed);
 }
@@ -48,7 +44,7 @@ function render(changed=false) {
     $('#mobile-count').textContent=`${state.online} / 2`;
     const labels={waiting:'모바일 기기를 기다리는 중',countdown:'3초 뒤 역할 배정',role:'두 모바일 기기에 역할 배정 중',playing:'DJ와 DANCER가 플레이 중',complete:'둘이 함께 목표 달성!'};
     $('#mobile-phase').textContent=labels[state.phase]||'';
-    $('#connection').textContent=online?'서버 연결됨':'다시 연결하는 중…';
+    $('#connection').textContent=online?'연결됨':'다시 연결하는 중…';
     return;
   }
   const phase=state.phase;
@@ -100,23 +96,32 @@ function renderControls(){
     lastServerAngles[side]=value;
   }
 }
+const client=new PartyClient({device,mobile:IS_MOBILE,
+  onState(next){if(!closed)accept(next);},
+  onStatus(status){
+    online=status==='online';
+    $('#connection').textContent=online?'연결됨':status==='connecting'?'연결하는 중…':'다시 연결하는 중…';
+    if(!online&&status!=='connecting'){$('#reconnect').classList.remove('hidden');}
+    if(state&&!closed)render();
+  },
+  onFull(){
+    joined=false;closed=true;screen('waiting');$('#waiting-note').textContent='두 사람이 이미 접속 중이에요.';
+    $('#waiting-title').textContent='LET’S DANCE!';$('#waiting-description').textContent='기존 기기에서 나간 뒤 다시 연결해주세요.';
+    $('#reconnect').classList.remove('hidden');
+  }
+});
 async function connect(){
   closed=false;$('#reconnect').classList.add('hidden');
-  try{accept(await api(IS_MOBILE?'connect':'desktop',IS_MOBILE?{kind:'mobile'}:{}));joined=true;}
-  catch(error){joined=false;if(!IS_MOBILE){screen('monitor');$('#mobile-phase').textContent=error.message;notify(error.message);return;}screen('waiting');$('#waiting-note').textContent='연결을 확인해주세요.';$('#waiting-title').textContent='LET’S DANCE!';$('#waiting-description').textContent=error.message;$('#reconnect').classList.remove('hidden');}
+  const timeout=setTimeout(()=>{
+    if(!joined){$('#waiting-note').textContent='연결이 조금 늦어지고 있어요.';$('#waiting-description').textContent='인터넷 연결을 확인한 뒤 다시 연결해주세요.';$('#reconnect').classList.remove('hidden');}
+  },15000);
+  try{await client.connect();joined=true;}
+  catch(error){joined=false;$('#waiting-note').textContent='연결을 확인해주세요.';$('#waiting-description').textContent=error.message;$('#reconnect').classList.remove('hidden');notify(error.message);}
+  finally{clearTimeout(timeout);}
 }
-let polling=false;
-async function poll(){
-  if(!joined||closed||polling)return;
-  polling=true;
-  try{accept(await api(IS_MOBILE?'state':'monitor',null,'GET'));}
-  catch(error){online=false;$('#connection').textContent='다시 연결하는 중…';if(error.status===401){joined=false;connect();}}
-  finally{polling=false;}
-}
-setInterval(poll,200);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
-$('#reconnect').addEventListener('click',connect);
-async function act(name,body={}){const next=await api(name,body);accept(next);return next;}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){client.pulse();client.syncClock();if(motionEnabled)keepAwake();}});
+$('#reconnect').addEventListener('click',()=>{if(!online&&!closed)location.reload();else connect();});
+async function act(name,body={}){const next=await client.request(name,body);if(!closed)accept(next);return next;}
 function canControl(){return IS_MOBILE&&online&&state?.phase==='playing'&&state.role==='dj';}
 function queue(patch,immediate=false){
   if(!canControl())return;
@@ -126,7 +131,7 @@ function queue(patch,immediate=false){
 async function flush(){
   if(sending||!Object.keys(pending).length)return;
   sending=true;const patch=pending;pending={};inFlight=patch;
-  try{accept(await api('controls',{patch}));}
+  try{accept(await client.request('controls',{patch}));}
   catch(error){online=false;notify(error.message);}
   finally{sending=false;inFlight={};renderControls();if(Object.keys(pending).length)flush();}
 }
@@ -226,15 +231,17 @@ function motion(event){
   if(force<5)shakeArmed=true;
   if(force>12&&shakeArmed){shakeArmed=false;shake();}
 }
+const sensor=createMotionSensor(window,{onSample:motion,onStatus(status){motionEnabled=status==='on';}});
+let screenLock=null;
+async function keepAwake(){if(!screenLock&&!document.hidden)try{screenLock=await navigator.wakeLock?.request('screen');screenLock?.addEventListener('release',()=>{screenLock=null;});}catch{}}
 $('#enable-motion').addEventListener('click',async()=>{
+  const button=$('#enable-motion');button.disabled=true;
+  $('#motion-message').textContent='접근을 물으면 허용을 눌러주세요.';
   try{
-    if(!isSecureContext)throw new Error('흔들기 감지는 HTTPS 주소로 열어야 해요. ? 버튼의 연결 설정을 확인해주세요.');
-    if(!window.DeviceMotionEvent)throw new Error('이 기기에는 움직임 센서가 없어요. 시연용 버튼을 사용할 수 있어요.');
-    if(typeof DeviceMotionEvent.requestPermission==='function'&&await DeviceMotionEvent.requestPermission()!=='granted')throw new Error('움직임 권한을 허용해주세요.');
-    if(!motionEnabled){window.addEventListener('devicemotion',motion);motionEnabled=true;}
-    $('#enable-motion').classList.add('hidden');$('#motion-message').textContent='움직임 감지 ON · 폰을 쥐고 춤춰요';
-    try{await navigator.wakeLock?.request('screen');}catch{}
+    await sensor.enable();motionEnabled=true;button.classList.add('hidden');
+    $('#motion-message').textContent='움직임 감지 ON · 폰을 쥐고 춤춰요';keepAwake();
   }catch(error){$('#motion-message').textContent=error.message;notify(error.message);}
+  finally{button.disabled=false;}
 });
 $('#demo-shake').addEventListener('click',shake);
 $$('.restart').forEach(el=>el.addEventListener('click',()=>act('restart').catch(error=>notify(error.message))));
@@ -242,7 +249,8 @@ $('#help-button').addEventListener('click',()=>$('#help').showModal());
 $$('.close-dialog').forEach(el=>el.addEventListener('click',()=>el.closest('dialog').close()));
 $('#open-network').addEventListener('click',()=>{$('#help').close();$('#network').showModal();});
 $('#leave').addEventListener('click',async()=>{
-  try{await api('leave');}catch{}
+  try{await client.leave();}catch{}
+  sensor.stop();motionEnabled=false;screenLock?.release();screenLock=null;$('#enable-motion').classList.remove('hidden');$('#motion-message').textContent='';
   closed=true;joined=false;state=null;online=false;pending={};clearConfetti();$('#help').close();screen('waiting');
   $('#waiting-note').textContent='이 기기에서 나왔어요.';$('#waiting-title').textContent='LET’S DANCE!';$('#waiting-description').textContent='다시 접속하면 친구와 새로 시작해요.';$('#reconnect').classList.remove('hidden');$('#connection').textContent='';
 });
@@ -267,16 +275,11 @@ function confetti(){
   }
   confettiFrame=requestAnimationFrame(frame);
 }
-async function info(){
-  try{
-    const result=await fetch('/api/info').then(r=>r.json());
-    const container=$('#addresses');const mobileLinks=$('#mobile-links');
-    for(const address of result.addresses){
-      for(const [protocol,port] of [['http',result.httpPort],['https',result.httpsPort]]){
-        if(!port)continue;const a=document.createElement('a');a.href=`${protocol}://${address}:${port}`;a.textContent=a.href;container.append(a);if(protocol==='http'){const link=a.cloneNode(true);mobileLinks.append(link);}
-      }
-    }
-  }catch{}
+function info(){
+  const link=new URL('.',location.href);link.search='';link.hash='';
+  for(const id of ['#addresses','#mobile-links']){
+    const a=document.createElement('a');a.href=link.href;a.textContent=link.href;$(id).replaceChildren(a);
+  }
 }
 if(!IS_MOBILE){screen('monitor');$('#leave').classList.add('hidden');}
 info();connect();
