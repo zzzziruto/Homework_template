@@ -1,4 +1,4 @@
-import { PartyClient } from './party-client.mjs';
+import { PartyClient } from './party-client.mjs?v=5';
 import { createMotionSensor } from './motion.mjs';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -25,6 +25,7 @@ function notify(message) {
   $('#toast').textContent=message; $('#toast').classList.remove('hidden');
   clearTimeout(messageTimer);messageTimer=setTimeout(()=>$('#toast').classList.add('hidden'),4000);
 }
+function showReconnect(show){$$('.reconnect').forEach(el=>el.classList.toggle('hidden',!show));}
 function accept(next) {
   if(closed)return;
   if(state && next.epoch===state.epoch && next.revision<state.revision)return;
@@ -99,13 +100,13 @@ function renderControls(){
     lastServerAngles[side]=value;
   }
 }
-const client=new PartyClient({device,mobile:IS_MOBILE,
+const client=new PartyClient({device,mobile:IS_MOBILE,visible:!document.hidden,
   onState(next){if(!closed)accept(next);},
   onStatus(status){
     if(closed)return;
     online=status==='online';
-    $('#connection').textContent=online?'연결됨':status==='connecting'?'연결하는 중…':'다시 연결하는 중…';
-    if(!online&&status!=='connecting'){$('#reconnect').classList.remove('hidden');}
+    $('#connection').textContent=online?'연결됨':status==='connecting'?'연결하는 중…':status==='error'?'연결을 확인해주세요.':'다시 연결하는 중…';
+    showReconnect(!online&&status!=='connecting');
     if(state&&!closed)render();
   },
   onFull(){
@@ -115,16 +116,16 @@ const client=new PartyClient({device,mobile:IS_MOBILE,
   }
 });
 async function connect(){
-  closed=false;$('#reconnect').classList.add('hidden');
+  closed=false;showReconnect(false);
   clearTimeout(connectionTimer);connectionTimer=setTimeout(()=>{
     if(!joined&&!closed){$('#waiting-note').textContent='연결이 조금 늦어지고 있어요.';$('#waiting-description').textContent='인터넷 연결을 확인한 뒤 다시 연결해주세요.';$('#reconnect').classList.remove('hidden');}
   },15000);
   try{await client.connect();if(!closed)joined=true;}
-  catch(error){if(closed)return;joined=false;$('#waiting-note').textContent='연결을 확인해주세요.';$('#waiting-description').textContent=error.message;$('#reconnect').classList.remove('hidden');notify(error.message);}
+  catch(error){if(closed)return;joined=false;$('#waiting-note').textContent='연결을 확인해주세요.';$('#waiting-description').textContent=error.message;if(!IS_MOBILE)$('#mobile-phase').textContent=error.message;showReconnect(true);notify(error.message);}
   finally{clearTimeout(connectionTimer);}
 }
-document.addEventListener('visibilitychange',()=>{if(!closed&&!document.hidden){client.pulse();client.syncClock();if(motionEnabled)keepAwake();}});
-$('#reconnect').addEventListener('click',()=>{if(closed||!online)location.reload();else connect();});
+document.addEventListener('visibilitychange',()=>{if(!closed){client.setVisibility(!document.hidden);if(!document.hidden&&motionEnabled)keepAwake();}});
+$$('.reconnect').forEach(el=>el.addEventListener('click',()=>{if(closed||!online)location.reload();else connect();}));
 async function act(name,body={}){const next=await client.request(name,body);if(!closed)accept(next);return next;}
 function canControl(){return !closed&&IS_MOBILE&&online&&state?.phase==='playing'&&state.role==='dj';}
 function queue(patch,immediate=false){

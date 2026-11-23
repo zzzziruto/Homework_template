@@ -1,5 +1,5 @@
 // Pure session rules. Only the p5.party host publishes the returned state.
-export const PROTOCOL=4;
+export const PROTOCOL=5;
 export const COLORS=['#ff00ff','#ceff60','#00e5e9','#ff98da','#ff7845'];
 const copy=value=>JSON.parse(JSON.stringify(value));
 const validId=value=>typeof value==='string'&&/^[a-f0-9-]{16,64}$/.test(value);

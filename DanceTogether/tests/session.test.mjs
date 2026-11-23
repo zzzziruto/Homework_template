@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createSession,stepSession,viewSession} from '../session.mjs';
+import {PROTOCOL,createSession,stepSession,viewSession} from '../session.mjs';
 const a='a'.repeat(36),b='b'.repeat(36),c='c'.repeat(36),d='d'.repeat(36);
-const peer=(id,at=0,kind='mobile',stream=id)=>({protocol:4,id,stream,kind,active:true,joinedAt:at,ping:at,observedAt:at,command:null});
+const peer=(id,at=0,kind='mobile',stream=id)=>({protocol:PROTOCOL,id,stream,kind,active:true,joinedAt:at,ping:at,observedAt:at,command:null});
 function fixture(){let s=createSession('test-epoch',0);const peers=[peer(a),peer(b)];let time=0;
  const tick=(at=time)=>{time=at;for(const p of peers)p.observedAt=at;const n=stepSession(s,peers,at,()=>0);if(n)s=n;return s;};
  const send=(id,name,body={},at=time)=>{const p=peers.find(p=>p.id===id);p.command={seq:(s.acks[p.stream]?.seq||0)+1,epoch:s.epoch,round:s.round,name,body};return tick(at);};
