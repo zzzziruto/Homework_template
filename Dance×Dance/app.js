@@ -1,7 +1,11 @@
-import { PartyClient } from './party-client.mjs?v=5';
-import { createMotionSensor } from './motion.mjs';
+import { PartyClient } from './party-client.mjs?v=20261129-layout1';
+import { createMotionSensor } from './motion.mjs?v=20261129-layout1';
+import {DJMixer} from './audio/dj-mixer.mjs?v=20261129-layout1';
+import {scratchVelocity} from './audio/scratch-core.mjs?v=20261129-layout1';
+import {rotationDelta,rotatedGain} from './audio/knob-rotation.mjs?v=20261129-layout1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
+const APP_VERSION = '20261129-layout1';
 const DEVICE_KEY = 'dance-together-v3-device';
 function isMobileDevice(nav,coarse){
   const ua=nav.userAgent||'';
@@ -19,6 +23,9 @@ let state=null, online=false, joined=false, closed=false, clockOffset=0, pending
 let lastShake=-Infinity, shakeArmed=true, previousGravity=null, motionEnabled=false;
 let wheelDrag=null, sliderDrag=null, angles={L:0,R:0}, lastServerAngles={L:null,R:null};
 let celebration='', messageTimer, connectionTimer, visibleScreen='';
+const sides=['L','R'],eqDrags=new Map();
+const mixer=new DJMixer(sides.map(side=>$('#audio-'+side)),{canPlay:canControl,onEnded(i){if(canControl())queue({['playing'+sides[i]]:false},true);}});
+function clearDJGestures(){wheelDrag=null;sliderDrag=null;eqDrags.clear();$$('.dragging').forEach(el=>el.classList.remove('dragging'));}
 
 function notify(message) {
   if(closed)return;
@@ -31,6 +38,8 @@ function accept(next) {
   if(state && next.epoch===state.epoch && next.revision<state.revision)return;
   const changed=state && state.remaining!==next.remaining;
   const newRound=state && state.round!==next.round;
+  if(state&&(state.phase!==next.phase||state.role!==next.role||state.epoch!==next.epoch||newRound))clearDJGestures();
+  mixer.updateSession(next,IS_MOBILE&&online&&!document.hidden);
   clockOffset=next.serverTime*1000-Date.now();
   state=next;
   if(newRound){celebration='';clearConfetti();}
@@ -81,6 +90,7 @@ const countdownTimer=setInterval(countdown,80);
 function renderControls(){
   if(!state)return;
   const c={...state.controls,...inFlight,...pending};
+  mixer.apply(c);
   $$('[data-slider]').forEach(el=>{
     if(sliderDrag?.el===el)return;
     const value=c[el.dataset.slider];
@@ -93,7 +103,21 @@ function renderControls(){
     el.classList.toggle('pressed',c['pressed'+side]===+n);
     el.setAttribute('aria-pressed',c['pad'+side]===+n);
   });
-  $$('[data-play]').forEach(el=>el.setAttribute('aria-pressed',c['playing'+el.dataset.play]));
+  $$('[data-play]').forEach(el=>{
+    const playing=c['playing'+el.dataset.play];el.setAttribute('aria-pressed',playing);
+    el.setAttribute('aria-label',`${el.dataset.play==='L'?'왼쪽':'오른쪽'} 데크 ${playing?'일시 정지':'재생'}`);
+  });
+  $$('[data-eq]').forEach(el=>{
+    const gain=c[el.dataset.eq]??0;
+    el.style.setProperty('--eq-angle',gain/12*135+'deg');
+    el.setAttribute('aria-valuenow',gain);el.setAttribute('aria-valuetext',`${gain>0?'+':''}${gain} dB`);
+  });
+  sides.forEach((side,i)=>{
+    const bpm=mixer.settings[i].formattedBpm,el=$('#bpm-'+side);
+    const [whole,fraction]=bpm.split('.');el.innerHTML=`<strong>${whole}<small>.${fraction}</small></strong>`;el.setAttribute('aria-label',`${side==='L'?'왼쪽':'오른쪽'} 데크 ${bpm} BPM`);
+    const tempo=$(`[data-slider="tempo${side}"]`);
+    tempo.setAttribute('aria-valuetext',`${bpm} BPM · ${mixer.settings[i].tempo.toFixed(2)}배`);
+  });
   for(const side of ['L','R']){
     const value=c['angle'+side];
     if(value!==lastServerAngles[side] && wheelDrag?.side!==side)angles[side]=value;
@@ -105,11 +129,13 @@ const client=new PartyClient({device,mobile:IS_MOBILE,visible:!document.hidden,
   onStatus(status){
     if(closed)return;
     online=status==='online';
+    mixer.updateSession(state,IS_MOBILE&&online&&!document.hidden);if(!online)clearDJGestures();
     $('#connection').textContent=online?'연결됨':status==='connecting'?'연결하는 중…':status==='error'?'연결을 확인해주세요.':'다시 연결하는 중…';
     showReconnect(!online&&status!=='connecting');
     if(state&&!closed)render();
   },
   onFull(){
+    mixer.halt();clearDJGestures();
     joined=false;closed=true;screen('waiting');$('#waiting-note').textContent='두 사람이 이미 접속 중이에요.';
     $('#waiting-title').textContent='LET’S DANCE!';$('#waiting-description').textContent='기존 기기에서 나간 뒤 다시 연결해주세요.';
     $('#reconnect').classList.remove('hidden');
@@ -124,7 +150,12 @@ async function connect(){
   catch(error){if(closed)return;joined=false;$('#waiting-note').textContent='연결을 확인해주세요.';$('#waiting-description').textContent=error.message;if(!IS_MOBILE)$('#mobile-phase').textContent=error.message;showReconnect(true);notify(error.message);}
   finally{clearTimeout(connectionTimer);}
 }
-document.addEventListener('visibilitychange',()=>{if(!closed){client.setVisibility(!document.hidden);if(!document.hidden&&motionEnabled)keepAwake();}});
+document.addEventListener('visibilitychange',()=>{if(!closed){
+  mixer.updateSession(state,IS_MOBILE&&online&&!document.hidden);
+  if(document.hidden){clearDJGestures();if(canControl())queue({playingL:false,playingR:false},true);}
+  client.setVisibility(!document.hidden);if(!document.hidden&&motionEnabled)keepAwake();
+}});
+window.addEventListener('pagehide',()=>{mixer.halt();mixer.engine.context?.suspend().catch(()=>{});});
 $$('.reconnect').forEach(el=>el.addEventListener('click',()=>{if(closed||!online)location.reload();else connect();}));
 async function act(name,body={}){const next=await client.request(name,body);if(!closed)accept(next);return next;}
 function canControl(){return !closed&&IS_MOBILE&&online&&state?.phase==='playing'&&state.role==='dj';}
@@ -147,23 +178,31 @@ $$('[data-wheel]').forEach(el=>{
   const side=el.dataset.wheel;
   el.addEventListener('pointerdown',event=>{
     if(!canControl()||wheelDrag)return;
+    const i=sides.indexOf(side);
+    if(!mixer.ready){mixer.prepare().catch(error=>notify(error.message));notify('음원을 준비하고 있어요. 준비 후 원판을 다시 움직여주세요.');return;}
+    const gesture=mixer.startScratch(i);if(!gesture)return;
     event.preventDefault();el.focus({preventScroll:true});el.setPointerCapture(event.pointerId);
-    wheelDrag={side,pointer:event.pointerId,angle:polar(event,el)};el.classList.add('dragging');
+    wheelDrag={side,pointer:event.pointerId,angle:polar(event,el),time:performance.now(),gesture};el.classList.add('dragging');
   });
   el.addEventListener('pointermove',event=>{
     if(wheelDrag?.side!==side||wheelDrag.pointer!==event.pointerId)return;
     const next=polar(event,el);let delta=next-wheelDrag.angle;
     if(delta>180)delta-=360;if(delta< -180)delta+=360;
-    angles[side]+=delta;wheelDrag.angle=next;queue({['angle'+side]:angles[side]});
+    const now=performance.now();mixer.moveScratch(sides.indexOf(side),wheelDrag.gesture,scratchVelocity(delta,(now-wheelDrag.time)/1000));
+    angles[side]+=delta;wheelDrag.angle=next;wheelDrag.time=now;queue({['angle'+side]:angles[side]});
   });
   const release=event=>{
     if(wheelDrag?.side!==side||event.pointerId!==wheelDrag.pointer)return;
-    wheelDrag=null;el.classList.remove('dragging');queue({['angle'+side]:angles[side]},true);
+    const gesture=wheelDrag.gesture;wheelDrag=null;el.classList.remove('dragging');queue({['angle'+side]:angles[side]},true);
+    mixer.endScratch(sides.indexOf(side),gesture).catch(error=>{if(canControl()){mixer.pause(sides.indexOf(side));queue({['playing'+side]:false},true);notify(error.message);}});
   };
   for(const name of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(name,release);
   el.addEventListener('keydown',event=>{
     if(!canControl()||!['ArrowLeft','ArrowRight'].includes(event.key))return;
-    event.preventDefault();angles[side]+=event.key==='ArrowLeft'?-15:15;queue({['angle'+side]:angles[side]},true);
+    event.preventDefault();const i=sides.indexOf(side),gesture=mixer.startScratch(i);if(!gesture)return;
+    mixer.moveScratch(i,gesture,event.key==='ArrowLeft'?-1.5:1.5);
+    angles[side]+=event.key==='ArrowLeft'?-15:15;queue({['angle'+side]:angles[side]},true);
+    setTimeout(()=>mixer.endScratch(i,gesture).catch(error=>notify(error.message)),120);
   });
 });
 $$('[data-slider]').forEach(el=>{
@@ -172,7 +211,7 @@ $$('[data-slider]').forEach(el=>{
     const r=el.getBoundingClientRect(),knob=key.startsWith('tempo')?.24:.15;
     const value=Math.max(0,Math.min(1,1-(event.clientY-r.top-r.height*knob/2)/(r.height*(1-knob))));
     el.querySelector('.handle').style.top=`${(1-value)*(key.startsWith('tempo')?76:85)}%`;
-    el.setAttribute('aria-valuenow',Math.round(value*100));queue({[key]:value});
+    el.setAttribute('aria-valuenow',Math.round(value*100));queue({[key]:key.startsWith('tempo')&&Math.abs(value-.5)<.025?.5:value});
   }
   el.addEventListener('pointerdown',event=>{
     if(!canControl()||sliderDrag)return;
@@ -186,7 +225,7 @@ $$('[data-slider]').forEach(el=>{
   for(const name of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(name,release);
   el.addEventListener('keydown',event=>{
     if(!canControl()||!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
-    event.preventDefault();let value=pending[key]??state.controls[key];
+    event.preventDefault();let value=pending[key]??inFlight[key]??state.controls[key];
     value=event.key==='Home'?0:event.key==='End'?1:Math.max(0,Math.min(1,value+(['ArrowUp','ArrowRight'].includes(event.key)?.03:-.03)));
     queue({[key]:value},true);
   });
@@ -202,15 +241,50 @@ $$('[data-pad]').forEach(el=>{
 });
 $$('[data-play]').forEach(el=>el.addEventListener('click',()=>{
   if(!canControl())return;const side=el.dataset.play,key='playing'+side;
-  queue({[key]:!(pending[key]??state.controls[key]),['angle'+side]:angles[side]},true);
+  const i=sides.indexOf(side),playing=!(pending[key]??inFlight[key]??state.controls[key]);
+  queue({[key]:playing,['angle'+side]:angles[side]},true);
+  if(playing)mixer.play(i).catch(error=>{if(canControl()){mixer.pause(i);queue({[key]:false},true);notify(error.message);}});
+  else mixer.pause(i);
 }));
+$$('[data-cue]').forEach(el=>el.addEventListener('click',()=>{
+  if(!canControl())return;const side=el.dataset.cue;
+  mixer.cue(sides.indexOf(side));if(wheelDrag?.side===side)wheelDrag=null;angles[side]=0;
+  $(`[data-wheel="${side}"]`).classList.remove('dragging');queue({['playing'+side]:false,['angle'+side]:0},true);
+}));
+$$('[data-eq]').forEach(el=>{
+  const key=el.dataset.eq;let lastTap=-Infinity;
+  function reset(){queue({[key]:0},true);}
+  el.addEventListener('pointerdown',event=>{
+    if(!canControl()||eqDrags.has(el))return;
+    event.preventDefault();el.focus({preventScroll:true});el.setPointerCapture(event.pointerId);
+    const r=el.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2,dead=r.width*.18;
+    const now=performance.now();if(now-lastTap<300){lastTap=-Infinity;reset();return;}
+    lastTap=now;
+    eqDrags.set(el,{pointer:event.pointerId,cx,cy,dead,last:Math.hypot(event.clientX-cx,event.clientY-cy)<dead?null:Math.atan2(event.clientY-cy,event.clientX-cx),value:pending[key]??inFlight[key]??state.controls[key]??0});
+    el.classList.add('dragging');
+  });
+  function move(event){
+    const drag=eqDrags.get(el);if(!drag||drag.pointer!==event.pointerId)return;
+    if(Math.hypot(event.clientX-drag.cx,event.clientY-drag.cy)<drag.dead){drag.last=null;return;}
+    const angle=Math.atan2(event.clientY-drag.cy,event.clientX-drag.cx);
+    if(drag.last!==null){const delta=rotationDelta(drag.last,angle);if(Math.abs(delta)>.01)lastTap=-Infinity;drag.value=rotatedGain(drag.value,delta);queue({[key]:Math.round(drag.value*10)/10});}
+    drag.last=angle;
+  }
+  el.addEventListener('pointermove',move);el.addEventListener('pointerup',move);
+  for(const name of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(name,event=>{if(eqDrags.get(el)?.pointer===event.pointerId){eqDrags.delete(el);el.classList.remove('dragging');flush();}});
+  el.addEventListener('keydown',event=>{
+    if(!canControl()||!['ArrowUp','ArrowRight','ArrowDown','ArrowLeft','Home','End','Enter'].includes(event.key))return;
+    event.preventDefault();const value=pending[key]??inFlight[key]??state.controls[key]??0;
+    queue({[key]:event.key==='Enter'?0:event.key==='Home'?-12:event.key==='End'?12:Math.max(-12,Math.min(12,value+(['ArrowUp','ArrowRight'].includes(event.key)?1:-1)))},true);
+  });
+});
 let lastFrame=performance.now(),wheelFrame=0;
 function animateWheels(now){
   if(closed)return;
   const dt=Math.min(.05,(now-lastFrame)/1000);lastFrame=now;
   for(const side of ['L','R']){
     const c=state?.controls;
-    if(state?.phase==='playing'&&(pending['playing'+side]??c['playing'+side])&&wheelDrag?.side!==side)angles[side]+=dt*(30+100*(pending['tempo'+side]??c['tempo'+side]));
+    if(state?.phase==='playing'&&(pending['playing'+side]??inFlight['playing'+side]??c['playing'+side])&&wheelDrag?.side!==side&&!mixer.ending[sides.indexOf(side)])angles[side]+=dt*120*mixer.settings[sides.indexOf(side)].tempo;
     const el=$(`[data-wheel="${side}"]`);el.firstElementChild.style.transform=`rotate(${angles[side]}deg)`;
     el.setAttribute('aria-valuenow',Math.round((angles[side]%360+360)%360));
   }
@@ -267,6 +341,7 @@ $('#open-network').addEventListener('click',()=>{$('#help').close();$('#network'
 async function leaveSession(){
   if(closed)return;
   closed=true;joined=false;online=false;state=null;pending={};inFlight={};
+  mixer.dispose();clearDJGestures();
   clearTimeout(sendTimer);clearTimeout(messageTimer);clearTimeout(connectionTimer);clearInterval(countdownTimer);
   cancelAnimationFrame(wheelFrame);clearConfetti();celebration='';
   sensor.stop();motionEnabled=false;previousGravity=null;shakeArmed=true;lastShake=-Infinity;
@@ -307,7 +382,7 @@ function confetti(){
   confettiFrame=requestAnimationFrame(frame);
 }
 function info(){
-  const link=new URL('.',location.href);link.search='';link.hash='';
+  const link=new URL('.',location.href);link.search='';link.searchParams.set('v',APP_VERSION);link.hash='';
   for(const id of ['#addresses','#mobile-links']){
     const a=document.createElement('a');a.href=link.href;a.textContent=link.href;$(id).replaceChildren(a);
   }

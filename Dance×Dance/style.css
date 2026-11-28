@@ -186,8 +186,8 @@ body.is-dancer .topbar {
 }
 .controller {
   position: relative;
-  width: min(100vw, calc((100svh - 52px) * 2.165));
-  aspect-ratio: 1600/739;
+  width: min(100vw, calc((100svh - 52px) * 2.16092));
+  aspect-ratio: 1504/696;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -202,18 +202,18 @@ body.is-dancer .topbar {
 .wheel {
   position: absolute;
   border-radius: 50%;
-  width: 21.1%;
+  width: 21.01%;
   aspect-ratio: 1;
   touch-action: none;
   cursor: grab;
 }
 .wheel-left {
-  left: 16.05%;
-  top: 22.9%;
+  left: 16.22%;
+  top: 21.41%;
 }
 .wheel-right {
-  left: 64.16%;
-  top: 22.25%;
+  left: 64.23%;
+  top: 20.69%;
 }
 .wheel.dragging {
   cursor: grabbing;
@@ -221,29 +221,127 @@ body.is-dancer .topbar {
 .disc {
   position: absolute;
   inset: 0;
-  border: clamp(1px, 0.15vw, 3px) solid #909291;
+  border: clamp(1px, .15vw, 3px) solid #909291;
   border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    #dcdada 0 23%,
-    #8c8c8c 23.5% 33%,
-    #777 33.5% 34%,
-    #f5f5f5 34.5%
-  );
+  background: radial-gradient(circle, #dcdada 0 23%, #8c8c8c 23.5% 33%, #777 33.5% 34%, #f5f5f5 34.5%);
   will-change: transform;
 }
 .disc i {
-  position: absolute;
-  left: 48.5%;
-  top: 5%;
-  height: 10%;
-  width: 3%;
-  background: #aaa;
-  border-radius: 1px;
+  display: none;
 }
 .dragging .disc i {
   background: var(--beat);
 }
+.bpm-readout {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #292929;
+  font-size: clamp(9px, 1.6vw, 26px);
+  font-weight: 700;
+  line-height: 1;
+  pointer-events: none;
+}
+.bpm-readout small { font-size: .58em; }
+.wheel::before { content: ""; position: absolute; inset: 0; border: clamp(1px, .15vw, 3px) solid #909291; border-radius: 50%; background: #dcdada; transform: translateY(3.8%); }
+.track-label {
+  position: absolute;
+  top: 6.18%;
+  width: 11.04%;
+  height: 11.35%;
+  background: #2f2f2f;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: .55vw;
+  pointer-events: none;
+}
+.track-label-left {
+  left: 21.14%;
+}
+.track-label-right {
+  left: 68.95%;
+}
+.track-label span {
+  font-size: clamp(5px, .85vw, 13px);
+  color: #fff;
+}
+.track-label strong {
+  font-size: clamp(6px, 1.05vw, 16px);
+}
+.cue {
+  position: absolute;
+  width: 3.59%;
+  height: 7.76%;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid #999;
+  border-radius: 50%;
+  background: #fff;
+  color: #111;
+  font-size: clamp(6px, .86vw, 13px);
+  font-weight: 400;
+}
+.cue-left {
+  left: 10.51%;
+  top: 69.11%;
+}
+.cue-right {
+  left: 59.38%;
+  top: 68.97%;
+}
+.eq-knob {
+  position: absolute;
+  width: 2.85%;
+  aspect-ratio: 1;
+  border: clamp(1px, .2vw, 3px) solid #909291;
+  border-radius: 50%;
+  padding: 0;
+  box-shadow: 0 0 0 clamp(2px, .33vw, 5px) #c6c6c6;
+  background: #f5f5f5;
+  color: #111;
+  touch-action: none;
+}
+.eq-left {
+  left: 46.32%;
+}
+.eq-right {
+  left: 51.17%;
+}
+.eq-hi {
+  top: 24.37%;
+}
+.eq-mid {
+  top: 38.02%;
+}
+.eq-low {
+  top: 51.52%;
+}
+.eq-caption {
+  position: absolute;
+  bottom: 125%;
+  left: -50%;
+  width: 200%;
+  font-size: clamp(5px, .8vw, 13px);
+  pointer-events: none;
+}
+.eq-knob > i { position: absolute; inset: 0; transform: rotate(var(--eq-angle, 0deg)); pointer-events: none; }
+.eq-knob > i::after {
+  content: "";
+  position: absolute;
+  left: 46.5%;
+  top: 0;
+  width: 7%;
+  height: 50%;
+  background: #909291;
+}
+.eq-knob.dragging { border-color: var(--cyan); }
+.eq-knob::before, .eq-knob::after { content: ""; position: absolute; bottom: -22%; width: 1px; height: 7%; background: #555; pointer-events: none; }
+.eq-knob::before { left: 15%; transform: rotate(20deg); }
+.eq-knob::after { right: 15%; transform: rotate(-20deg); }
 .slider {
   position: absolute;
   background: var(--paper);
@@ -259,41 +357,41 @@ body.is-dancer .topbar {
   right: -8px;
 }
 .volume-left {
-  left: 45.9%;
-  top: 17.5%;
-  width: 2.7%;
-  height: 36.3%;
+  left: 11.24%;
+  top: 27.01%;
+  width: 2.13%;
+  height: 35.63%;
 }
 .volume-right {
-  left: 51.5%;
-  top: 17.5%;
-  width: 2.7%;
-  height: 36.3%;
+  left: 60.11%;
+  top: 26.01%;
+  width: 2.13%;
+  height: 35.63%;
 }
 .tempo-left {
-  left: 38.95%;
-  top: 64.1%;
-  width: 2.6%;
-  height: 22.4%;
+  left: 39.23%;
+  top: 70.4%;
+  width: 2.13%;
+  height: 15.8%;
 }
 .tempo-right {
-  left: 86.7%;
-  top: 64.1%;
-  width: 2.6%;
-  height: 23%;
+  left: 86.97%;
+  top: 70.4%;
+  width: 2.13%;
+  height: 15.8%;
 }
 .rail {
   position: absolute;
-  left: 44%;
+  left: 38%;
   top: 0;
   bottom: 0;
-  width: 16%;
+  width: 24%;
   background: linear-gradient(90deg, #888 0 23%, #323232 24% 68%, #777 69%);
 }
 .handle {
   position: absolute;
-  left: 15%;
-  width: 70%;
+  left: 7.5%;
+  width: 85%;
   height: 15%;
   background: linear-gradient(#909090 0 32%, #bababa 33% 65%, #909090 66%);
   pointer-events: none;
@@ -306,39 +404,36 @@ body.is-dancer .topbar {
   position: absolute;
   display: flex;
   justify-content: space-between;
-  background: var(--paper);
-  padding: 0.25% 0.15% 0.55%;
-  height: 12.5%;
-  width: 19.6%;
-  top: 74.45%;
+  background: transparent;
+  padding: 0;
+  height: 10.5%;
+  width: 19.95%;
+  top: 75.14%;
   align-items: center;
 }
 .pads-left {
-  left: 17.05%;
+  left: 16.62%;
 }
 .pads-right {
-  left: 65.04%;
-  top: 74.05%;
+  left: 64.76%;
+  top: 74.71%;
 }
 .pads button {
-  width: 25%;
-  height: 88%;
+  width: 23%;
+  height: 94%;
   padding: 0;
   touch-action: none;
   background: #f5f5f5;
-  border: 1px solid #aaa;
-  border-radius: 15%;
-  box-shadow: 0 0.32vw 0 #8f8f8f;
-  transition:
-    transform 0.07s,
-    box-shadow 0.07s,
-    background 0.07s;
+  border: 1px solid #909291;
+  border-radius: 18%;
+  box-shadow: 0 .32vw 0 #8f8f8f;
+  transition: transform .07s, box-shadow .07s, background .07s;
 }
 .pads-left button.selected {
   background: #ceff60;
 }
 .pads-right button.selected {
-  background: #ff93dc;
+  background: #f269f6;
 }
 .pads button.pressed {
   transform: translateY(0.3vw);
@@ -347,37 +442,38 @@ body.is-dancer .topbar {
 }
 .play {
   position: absolute;
-  top: 75.55%;
-  height: 10.1%;
-  width: 4.7%;
+  width: 3.59%;
+  height: 7.76%;
   border-radius: 50%;
   padding: 0;
   border: 0;
-  border-bottom: 2px solid #999;
+  border-bottom: 1px solid #999;
   background: #fff;
-  color: #333;
-  font-size: clamp(8px, 1.5vw, 24px);
+  color: #222;
+  font-size: clamp(7px, 1.4vw, 22px);
 }
 .play-left {
-  left: 10.25%;
+  left: 10.51%;
+  top: 77.59%;
 }
 .play-right {
-  left: 58.75%;
-  top: 74.2%;
+  left: 59.38%;
+  top: 77.44%;
 }
 .play[aria-pressed="true"] {
   background: var(--cyan);
 }
 .dj-number {
   position: absolute;
-  left: 45.8%;
-  top: 67.8%;
-  width: 8.72%;
-  height: 16.4%;
+  left: 45.88%;
+  top: 67.67%;
+  width: 8.71%;
+  height: 16.24%;
   display: grid;
   place-items: center;
   color: #000;
   background: var(--beat);
+  border: 1px solid #999;
   font-size: clamp(22px, 5.2vw, 90px);
 }
 .dj-number.complete {

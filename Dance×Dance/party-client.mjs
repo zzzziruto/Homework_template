@@ -1,4 +1,4 @@
-import {PROTOCOL,createSession,stepSession,viewSession} from './session.mjs?v=5';
+import {PROTOCOL,createSession,stepSession,viewSession} from './session.mjs?v=20261129-layout1';
 const unique=()=>crypto.randomUUID();
 const clone=value=>JSON.parse(JSON.stringify(value));
 export const HOST_LEASE_MS=5000;

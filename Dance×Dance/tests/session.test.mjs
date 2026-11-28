@@ -75,3 +75,11 @@ test('an explicit inactive profile releases its slot without waiting for the sta
  const f=fixture();complete(f);f.peers[0].active=false;f.tick(40000);
  assert.deepEqual(f.state.members.map(m=>m.id),[b]);assert.equal(viewSession(f.state,b).phase,'complete');
 });
+test('DJ EQ is shared per deck, bounded to ±12 dB, and rejected atomically for other roles',()=>{
+ const f=fixture();f.tick();f.tick(5000);
+ f.send(b,'controls',{patch:{eqHiL:8,eqMidR:-99}},5200);
+ assert.equal(f.state.controls.eqHiL,8);assert.equal(f.state.controls.eqHiR,0);assert.equal(f.state.controls.eqMidR,-12);
+ f.send(a,'controls',{patch:{eqLowL:5}},5300);assert.equal(f.state.controls.eqLowL,0);assert.ok(f.state.acks[a].error);
+ f.send(b,'controls',{patch:{eqHiL:1,eqLowR:'bad'}},5400);assert.equal(f.state.controls.eqHiL,8);
+ f.send(b,'controls',{patch:{padL:3,pressedR:3}},5500);assert.equal(f.state.controls.padL,3);assert.equal(f.state.controls.pressedR,3);
+});

@@ -1,9 +1,9 @@
 // Pure session rules. Only the p5.party host publishes the returned state.
-export const PROTOCOL=5;
+export const PROTOCOL=6;
 export const COLORS=['#ff00ff','#ceff60','#00e5e9','#ff98da','#ff7845'];
 const copy=value=>JSON.parse(JSON.stringify(value));
 const validId=value=>typeof value==='string'&&/^[a-f0-9-]{16,64}$/.test(value);
-export function initialControls(){return {angleL:0,angleR:0,tempoL:.5,tempoR:.1,volumeL:.8,volumeR:.3,padL:2,padR:1,pressedL:null,pressedR:null,playingL:false,playingR:false};}
+export function initialControls(){return {angleL:0,angleR:0,tempoL:.5,tempoR:.5,volumeL:.8,volumeR:.3,padL:1,padR:1,pressedL:null,pressedR:null,playingL:false,playingR:false,eqHiL:0,eqMidL:0,eqLowL:0,eqHiR:0,eqMidR:0,eqLowR:0};}
 export function createSession(epoch,now=Date.now()){
  return {protocol:PROTOCOL,epoch,revision:0,phase:'waiting',deadline:null,startedAt:null,finishedAt:null,remaining:100,round:1,controls:initialControls(),members:[],acks:{},excluded:[],events:[],lastShake:-1e20,hostTime:now};
 }
@@ -26,7 +26,7 @@ function command(s,member,peer,c,now){
   if(typeof c.body?.event!=='string'||!c.body.event||c.body.event.length>100)throw new Error('움직임 정보가 올바르지 않아요.');
   if(s.phase!=='playing'||s.events.includes(c.body.event)||now-s.lastShake<250)return;
   s.events=[...s.events,c.body.event].slice(-1000);s.lastShake=now;s.remaining=Math.max(0,s.remaining-1);
-  if(s.remaining===0){s.phase='complete';s.finishedAt=now;s.controls.pressedL=s.controls.pressedR=null;}return;
+  if(s.remaining===0){s.phase='complete';s.finishedAt=now;s.controls.pressedL=s.controls.pressedR=null;s.controls.playingL=s.controls.playingR=false;}return;
  }
  if(c.name==='controls'){
   if(member.role!=='dj')throw new Error('DJ만 박스를 조작할 수 있어요.');
@@ -38,7 +38,7 @@ function command(s,member,peer,c,now){
    else if(key.startsWith('pressed')&&value===null)clean[key]=null;
    else{
     if(typeof value!=='number'||!Number.isFinite(value))throw new Error('숫자 값이 올바르지 않아요.');
-    const [low,high]=key.startsWith('angle')?[-1000000,1000000]:/^(pad|pressed)/.test(key)?[0,2]:[0,1];
+    const [low,high]=key.startsWith('eq')?[-12,12]:key.startsWith('angle')?[-1000000,1000000]:/^(pad|pressed)/.test(key)?[0,3]:[0,1];
     clean[key]=Math.max(low,Math.min(high,value));if(/^(pad|pressed)/.test(key))clean[key]=Math.trunc(clean[key]);
    }
   }Object.assign(s.controls,clean);return;

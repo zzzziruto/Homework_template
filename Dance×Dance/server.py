@@ -295,12 +295,13 @@ class Handler(BaseHTTPRequestHandler):
                 cert = ROOT/'.certificates'/'dance.cer'
                 if cert.exists(): return self.reply(200,cert.read_bytes(),'application/x-x509-ca-cert')
             relative = path.lstrip('/') or 'index.html'
-            # Only application assets are served. Certificates, keys, code and state are private.
-            if relative not in ('index.html','app.js','style.css') and not relative.startswith('assets/'):
-                return self.reply(404,dict(error='없는 페이지예요.'))
             file = (ROOT/relative).resolve()
             if ROOT.resolve() not in file.parents or not file.is_file():
                 return self.reply(404,dict(error='파일을 찾을 수 없어요.'))
+            # Check the resolved public path so nested assets cannot expose private files.
+            public = file.relative_to(ROOT.resolve()).as_posix()
+            if public not in ('index.html','app.js','style.css','session.mjs','party-client.mjs','motion.mjs') and not public.startswith(('assets/','vendor/','audio/','music/')):
+                return self.reply(404,dict(error='없는 페이지예요.'))
             return self.reply(200,file.read_bytes(),mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
         except AppError as error: self.reply(error.status,dict(error=error.message))
         except (BrokenPipeError,ConnectionResetError): pass

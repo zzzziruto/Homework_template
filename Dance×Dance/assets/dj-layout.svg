@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1504" height="696" viewBox="0 0 1504 696">
+  <title>Dance×Dance DJ controller chassis</title>
+  <defs>
+    <path id="chassis" d="M156 87H300V48Q300 32 316 32H486Q502 32 502 48V87H1019V47Q1019 31 1035 31H1205Q1221 31 1221 47V87H1350Q1376 87 1376 113V600Q1376 626 1350 626H156Q130 626 130 600V113Q130 87 156 87Z"/>
+  </defs>
+  <use href="#chassis" fill="#8f8f8f" transform="translate(0 14)"/>
+  <use href="#chassis" fill="#dcdada"/>
+  <path d="M300 87V48Q300 32 316 32H486Q502 32 502 48V87M1019 87V47Q1019 31 1035 31H1205Q1221 31 1221 47V87" fill="none" stroke="#999" stroke-width="3"/>
+  <path d="M654 96V626M858 96V626" stroke="#aaa" stroke-width="1"/>
+  <path d="M318 43H484V122H318ZM1037 43H1203V122H1037Z" fill="#2f2f2f"/>
+  <g fill="#111" font-family="Arial, sans-serif" font-size="13" text-anchor="middle">
+    <text x="185" y="457">VOL.1</text>
+    <text x="920" y="449">VOL.2</text>
+    <text x="606" y="477">TEMPO1</text>
+    <text x="1324" y="477">TEMPO2</text>
+  </g>
+</svg>
