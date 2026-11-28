@@ -9,6 +9,20 @@ test('changing the tempo keeps pitch preservation enabled and does not alter the
  const {elements,engine}=fixture();engine.tempo(0,1.25);assert.equal(elements[0].playbackRate,1.25);assert.equal(elements[0].preservesPitch,true);assert.equal(elements[1].playbackRate,1);
  engine.tempo(1,.75);await engine.play(0);await engine.play(1);engine.pause(0);assert.equal(elements[0].paused,true);assert.equal(elements[1].paused,false);
 });
+test('unchanged tempo and pitch settings never reconfigure playing media on shared-state renders',async()=>{
+ const {elements,engine}=fixture();await engine.play(0);elements[0].currentTime=87;
+ let rate=1,pitch=true,rateWrites=0,pitchWrites=0;
+ Object.defineProperties(elements[0],{
+  playbackRate:{get:()=>rate,set:value=>{rate=value;rateWrites++;}},
+  preservesPitch:{get:()=>pitch,set:value=>{pitch=value;pitchWrites++;}},
+  webkitPreservesPitch:{get:()=>pitch,set:value=>{pitch=value;pitchWrites++;}}
+ });
+ for(let n=0;n<100;n++)engine.tempo(0,1);
+ assert.equal(rateWrites,0);assert.equal(pitchWrites,0);
+ engine.tempo(0,1.15);for(let n=0;n<100;n++)engine.tempo(0,1.15);
+ assert.equal(rateWrites,1);assert.equal(pitchWrites,0);
+ assert.equal(elements[0].paused,false);assert.equal(elements[0].currentTime,87);
+});
 test('each deck volume controls its audio gain, including a true zero gain target',()=>{
  const {engine}=fixture();engine.volume(0,0);engine.volume(1,1);assert.equal(engine.gains[0].gain.value,0);assert.ok(engine.gains[1].gain.value>0);assert.ok(engine.gains[1].gain.value<=1);
 });

@@ -1,11 +1,11 @@
-import { PartyClient } from './party-client.mjs?v=20261129-layout1';
-import { createMotionSensor } from './motion.mjs?v=20261129-layout1';
-import {DJMixer} from './audio/dj-mixer.mjs?v=20261129-layout1';
-import {scratchVelocity} from './audio/scratch-core.mjs?v=20261129-layout1';
-import {rotationDelta,rotatedGain} from './audio/knob-rotation.mjs?v=20261129-layout1';
+import { PartyClient } from './party-client.mjs?v=20261129-tempo1';
+import { createMotionSensor } from './motion.mjs?v=20261129-tempo1';
+import {DJMixer} from './audio/dj-mixer.mjs?v=20261129-tempo1';
+import {scratchVelocity} from './audio/scratch-core.mjs?v=20261129-tempo1';
+import {rotationDelta,rotatedGain} from './audio/knob-rotation.mjs?v=20261129-tempo1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
-const APP_VERSION = '20261129-layout1';
+const APP_VERSION = '20261129-tempo1';
 const DEVICE_KEY = 'dance-together-v3-device';
 function isMobileDevice(nav,coarse){
   const ua=nav.userAgent||'';
@@ -215,12 +215,16 @@ $$('[data-slider]').forEach(el=>{
   }
   el.addEventListener('pointerdown',event=>{
     if(!canControl()||sliderDrag)return;
-    event.preventDefault();el.focus({preventScroll:true});el.setPointerCapture(event.pointerId);sliderDrag={el,pointer:event.pointerId};move(event);
+    event.preventDefault();el.focus({preventScroll:true});el.setPointerCapture(event.pointerId);sliderDrag={el,pointer:event.pointerId};
+    if(key.startsWith('tempo'))mixer.beginTempo(sides.indexOf(key.slice(-1)));
+    move(event);
   });
   el.addEventListener('pointermove',event=>{if(sliderDrag?.el===el&&sliderDrag.pointer===event.pointerId)move(event);});
   const release=event=>{
     if(sliderDrag?.el!==el||sliderDrag.pointer!==event.pointerId)return;
-    sliderDrag=null;flush();
+    sliderDrag=null;
+    if(key.startsWith('tempo'))mixer.endTempo(sides.indexOf(key.slice(-1)));
+    flush();
   };
   for(const name of ['pointerup','pointercancel','lostpointercapture'])el.addEventListener(name,release);
   el.addEventListener('keydown',event=>{

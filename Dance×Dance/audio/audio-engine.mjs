@@ -1,6 +1,6 @@
-import {loadLocalTrack} from './media-position.mjs?v=20261129-layout1';
-import {createThreeBandEQ,eqGain,EQ_BANDS} from './eq.mjs?v=20261129-layout1';
-import {TEST_TRACK} from './deck-settings.mjs?v=20261129-layout1';
+import {loadLocalTrack} from './media-position.mjs?v=20261129-tempo1';
+import {createThreeBandEQ,eqGain,EQ_BANDS} from './eq.mjs?v=20261129-tempo1';
+import {TEST_TRACK} from './deck-settings.mjs?v=20261129-tempo1';
 export class DJAudio {
  constructor(elements){this.elements=elements;this.ready=false;this.loading=null;this.context=null;this.node=null;this.gains=[];this.equalizers=[];this.eqValues=[{hi:0,mid:0,low:0},{hi:0,mid:0,low:0}];this.scratching=[false,false];this.token=0;this.pending=new Map();this.positions=[0,0];this.sessions=[null,null];this.objectURL=null;this.intent=[false,false];this.volumes=[.7,.5];this.tempos=[1,1];this.operations=[0,0];this.disposed=false;this.abort=new AbortController();}
  checkOpen(){if(this.disposed)throw new Error('오디오 연결이 종료됐어요. 다시 접속해주세요.');}
@@ -30,7 +30,7 @@ export class DJAudio {
    this.checkOpen();
    if(!this.context.audioWorklet)throw new Error('스크래치 기능을 위해 최신 Safari 또는 Chrome에서 열어주세요.');
    if(!this.node){
-    await this.context.audioWorklet.addModule(new URL('./scratch-worklet.mjs?v=20261129-layout1',import.meta.url));
+    await this.context.audioWorklet.addModule(new URL('./scratch-worklet.mjs?v=20261129-tempo1',import.meta.url));
     this.checkOpen();
     this.node=new AudioWorkletNode(this.context,'dj-scratch',{numberOfInputs:0,numberOfOutputs:2,outputChannelCount:[2,2]});
     // Keep the scratch processor running for playhead movement, but never send
@@ -66,7 +66,13 @@ export class DJAudio {
  async play(i){this.checkOpen();if(!this.ready)throw new Error('먼저 소리를 켜주세요.');const operation=++this.operations[i];this.intent[i]=true;await this.context.resume();if(operation!==this.operations[i]||!this.intent[i]||this.scratching[i])return;await this.elements[i].play();if(!this.intent[i]||this.disposed)this.elements[i].pause();}
  pause(i){this.operations[i]++;this.intent[i]=false;this.elements[i].pause();}
  volume(i,value){this.volumes[i]=value;if(this.ready){const gain=this.gains[i].gain;if(value===0){gain.cancelScheduledValues?.(this.context.currentTime);if(gain.setValueAtTime)gain.setValueAtTime(0,this.context.currentTime);else gain.value=0;}else gain.setTargetAtTime(value*.65,this.context.currentTime,.012);}}
- tempo(i,value){this.tempos[i]=value;this.elements[i].playbackRate=value;this.elements[i].preservesPitch=true;if('webkitPreservesPitch' in this.elements[i])this.elements[i].webkitPreservesPitch=true;}
+ tempo(i,value){
+  this.tempos[i]=value;const audio=this.elements[i];
+  // Shared-state renders must not keep restarting Safari's rate/pitch pipeline.
+  if(audio.preservesPitch!==true)audio.preservesPitch=true;
+  if('webkitPreservesPitch' in audio&&audio.webkitPreservesPitch!==true)audio.webkitPreservesPitch=true;
+  if(audio.playbackRate!==value)audio.playbackRate=value;
+ }
  eq(i,band,value){
   if(!Object.hasOwn(EQ_BANDS,band))throw new Error('알 수 없는 EQ 밴드예요.');
   const gain=eqGain(value);this.eqValues[i][band]=gain;this.equalizers[i]?.setGain(band,gain);return gain;
