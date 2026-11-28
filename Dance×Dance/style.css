@@ -227,10 +227,18 @@ body.is-dancer .topbar {
   will-change: transform;
 }
 .disc i {
-  display: none;
+  position: absolute;
+  display: block;
+  left: 48.75%;
+  top: 6%;
+  width: 2.5%;
+  height: 11%;
+  border-radius: 999px;
+  background: #ceff60;
+  pointer-events: none;
 }
-.dragging .disc i {
-  background: var(--beat);
+.wheel-right .disc i {
+  background: #ff98da;
 }
 .bpm-readout {
   position: absolute;
@@ -256,7 +264,7 @@ body.is-dancer .topbar {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: .55vw;
+  gap: .35vw;
   pointer-events: none;
 }
 .track-label-left {
@@ -271,6 +279,13 @@ body.is-dancer .topbar {
 }
 .track-label strong {
   font-size: clamp(6px, 1.05vw, 16px);
+}
+.track-time {
+  color: #bbb;
+  font-size: clamp(5px, .75vw, 12px);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .cue {
   position: absolute;

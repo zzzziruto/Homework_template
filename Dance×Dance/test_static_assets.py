@@ -18,7 +18,9 @@ class StaticAssetTests(unittest.TestCase):
     def test_preview_serves_modules_worklets_and_audio(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(server, 'ROOT', Path(directory)):
             for relative in ('party-client.mjs', 'motion.mjs', 'session.mjs', 'audio/audio-engine.mjs',
-                             'audio/scratch-worklet.mjs', 'vendor/p5.party-0.16.0.js',
+                             'audio/scratch-worklet.mjs', 'audio/buffer-deck.mjs',
+                             'audio/playback-display.mjs', 'vendor/p5.party-0.16.0.js',
+                             'vendor/soundtouch-processor-2.1.1.js',
                              'assets/dj-layout.svg', 'music/Bad Romance.mp3'):
                 target = Path(directory) / relative
                 target.parent.mkdir(parents=True, exist_ok=True)

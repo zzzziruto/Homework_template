@@ -1,4 +1,4 @@
-import {ScratchEngine} from './scratch-core.mjs?v=20261129-tempo1';
+import {ScratchEngine} from './scratch-core.mjs?v=20261129-deck2';
 class ScratchProcessor extends AudioWorkletProcessor {
  constructor(){super();this.engine=new ScratchEngine(sampleRate);this.frames=0;this.sessions=[null,null];
   this.port.onmessage=({data:m})=>{

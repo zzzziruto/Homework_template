@@ -1,8 +1,8 @@
-import {loadLocalTrack} from './media-position.mjs?v=20261129-tempo1';
-import {createThreeBandEQ,eqGain,EQ_BANDS} from './eq.mjs?v=20261129-tempo1';
-import {TEST_TRACK} from './deck-settings.mjs?v=20261129-tempo1';
+import {BufferDeck} from './buffer-deck.mjs?v=20261129-deck2';
+import {createThreeBandEQ,eqGain,EQ_BANDS} from './eq.mjs?v=20261129-deck2';
+import {TEST_TRACK} from './deck-settings.mjs?v=20261129-deck2';
 export class DJAudio {
- constructor(elements){this.elements=elements;this.ready=false;this.loading=null;this.context=null;this.node=null;this.gains=[];this.equalizers=[];this.eqValues=[{hi:0,mid:0,low:0},{hi:0,mid:0,low:0}];this.scratching=[false,false];this.token=0;this.pending=new Map();this.positions=[0,0];this.sessions=[null,null];this.objectURL=null;this.intent=[false,false];this.volumes=[.7,.5];this.tempos=[1,1];this.operations=[0,0];this.disposed=false;this.abort=new AbortController();}
+ constructor(elements){this.elements=elements;this.ready=false;this.loading=null;this.context=null;this.node=null;this.gains=[];this.equalizers=[];this.eqValues=[{hi:0,mid:0,low:0},{hi:0,mid:0,low:0}];this.scratching=[false,false];this.token=0;this.pending=new Map();this.positions=[0,0];this.sessions=[null,null];this.intent=[false,false];this.volumes=[.7,.5];this.tempos=[1,1];this.operations=[0,0];this.disposed=false;this.abort=new AbortController();}
  checkOpen(){if(this.disposed)throw new Error('오디오 연결이 종료됐어요. 다시 접속해주세요.');}
  unlock(){
   this.checkOpen();
@@ -15,22 +15,23 @@ export class DJAudio {
    this.analyser=this.context.createAnalyser();this.analyser.fftSize=256;
    this.master.connect(this.analyser);this.analyser.connect(this.context.destination);
    this.elements.forEach((audio,i)=>{
-    const source=this.context.createMediaElementSource(audio),gain=this.context.createGain();gain.gain.value=0;
-    const equalizer=createThreeBandEQ(this.context,this.eqValues[i]);source.connect(equalizer.input);equalizer.output.connect(gain);gain.connect(this.master);
+    const gain=this.context.createGain();gain.gain.value=0;
+    const equalizer=createThreeBandEQ(this.context,this.eqValues[i]);equalizer.output.connect(gain);gain.connect(this.master);
     this.equalizers[i]=equalizer;this.gains[i]=gain;
-    audio.preservesPitch=true;if('webkitPreservesPitch' in audio)audio.webkitPreservesPitch=true;
    });
   }
   const resume=this.context.resume();
   if(this.ready)return resume;
   if(this.loading)return this.loading;
-  const starts=this.elements.map(audio=>audio.play().then(()=>{audio.pause();audio.currentTime=0;}));
   this.loading=(async()=>{
-   await Promise.all([resume,...starts]);
+   await resume;
    this.checkOpen();
    if(!this.context.audioWorklet)throw new Error('스크래치 기능을 위해 최신 Safari 또는 Chrome에서 열어주세요.');
    if(!this.node){
-    await this.context.audioWorklet.addModule(new URL('./scratch-worklet.mjs?v=20261129-tempo1',import.meta.url));
+    await Promise.all([
+     this.context.audioWorklet.addModule(new URL('./scratch-worklet.mjs?v=20261129-deck2',import.meta.url)),
+     this.context.audioWorklet.addModule(new URL('../vendor/soundtouch-processor-2.1.1.js?v=20261129-deck2',import.meta.url))
+    ]);
     this.checkOpen();
     this.node=new AudioWorkletNode(this.context,'dj-scratch',{numberOfInputs:0,numberOfOutputs:2,outputChannelCount:[2,2]});
     // Keep the scratch processor running for playhead movement, but never send
@@ -47,19 +48,22 @@ export class DJAudio {
    const response=await fetch(TEST_TRACK.src,{signal:this.abort.signal});if(!response.ok)throw new Error('음원을 불러오지 못했어요. 다시 시도해주세요.');
    const Decoder=window.OfflineAudioContext||window.webkitOfflineAudioContext;
    const bytes=await response.arrayBuffer();
-   // A complete local Blob makes seeks independent of the host's HTTP Range support.
-   const localURL=URL.createObjectURL(new Blob([bytes],{type:'audio/mpeg'}));
-   try{await loadLocalTrack(this.elements,localURL,{signal:this.abort.signal});this.checkOpen();}catch(error){URL.revokeObjectURL(localURL);throw error;}
-   if(this.objectURL)URL.revokeObjectURL(this.objectURL);this.objectURL=localURL;
-   const decoder=new Decoder(2,1,22050);const buffer=await decoder.decodeAudioData(bytes);
+   // Both decks share one decoded buffer. Rate automation stays in Web Audio,
+   // avoiding HTMLMediaElement's stop/rebuffer cycle when Safari changes tempo.
+   const decoder=new Decoder(2,1,44100);const buffer=await decoder.decodeAudioData(bytes);
    this.checkOpen();
-   const channels=[buffer.getChannelData(0).slice(),buffer.getChannelData(Math.min(1,buffer.numberOfChannels-1)).slice()];
+   // Scratching is deliberately silent: this low-memory proxy only tracks time.
+   const channels=[new Float32Array(Math.ceil(buffer.duration*1000))];
    await new Promise((resolve,reject)=>{
     this.rejectLoad=reject;this.loadTimer=setTimeout(()=>reject(new Error('스크래치 준비가 늦어지고 있어요. 다시 시도해주세요.')),20000);
     this.onLoaded=()=>{clearTimeout(this.loadTimer);this.rejectLoad=null;resolve();};
-    this.node.port.postMessage({type:'load',channels,rate:buffer.sampleRate},channels.map(c=>c.buffer));
+    this.node.port.postMessage({type:'load',channels,rate:1000},channels.map(c=>c.buffer));
    });
-   this.checkOpen();this.duration=buffer.duration;this.ready=true;this.volumes.forEach((v,i)=>this.volume(i,v));this.tempos.forEach((v,i)=>this.tempo(i,v));
+   this.checkOpen();this.duration=buffer.duration;
+   this.elements.forEach((audio,i)=>{
+    this.elements[i]=new BufferDeck({context:this.context,buffer,destination:this.equalizers[i].input,onEnded:()=>audio.dispatchEvent(new Event('ended'))});
+   });
+   this.ready=true;this.volumes.forEach((v,i)=>this.volume(i,v));this.tempos.forEach((v,i)=>this.tempo(i,v));
   })().catch(error=>{this.elements.forEach(a=>a.pause());this.gains.forEach(g=>g.gain.value=0);throw error;}).finally(()=>{this.loading=null;});
   return this.loading;
  }
@@ -126,7 +130,6 @@ export class DJAudio {
   if(this.disposed)return;this.stopAll();this.disposed=true;this.ready=false;this.abort.abort();
   clearTimeout(this.loadTimer);this.rejectLoad?.(new Error('오디오 연결이 종료됐어요.'));this.rejectLoad=null;
   this.node?.disconnect();this.scratchOutput?.disconnect();this.context?.close().catch(()=>{});
-  if(this.objectURL)URL.revokeObjectURL(this.objectURL);this.objectURL=null;
-  this.elements.forEach(a=>{a.removeAttribute?.('src');a.load?.();});
+  this.elements.forEach(a=>{a.dispose?.();a.removeAttribute?.('src');a.load?.();});
  }
 }

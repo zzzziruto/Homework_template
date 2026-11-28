@@ -41,31 +41,18 @@ test('tempo/BPM and EQ work before the first playback without unlocking or chang
  assert.equal(f.engine.eqValues[0].hi,9);assert.equal(f.engine.eqValues[1].hi,0);
  assert.equal(f.engine.gains[1].gain.value,0);assert.equal(f.unlocks,0);
 });
-test('dragging tempo previews BPM continuously and commits media speed once on release without stopping either deck',async()=>{
+test('every local tempo input changes the media rate immediately without stopping or seeking either deck',async()=>{
  for(const i of [0,1]){
   const f=fixture();f.mixer.updateSession(session());await f.mixer.play(0);await f.mixer.play(1);
-  f.elements[i].currentTime=87;let rate=1,writes=0;
-  Object.defineProperty(f.elements[i],'playbackRate',{get:()=>rate,set:value=>{rate=value;writes++;}});
-  const c={...initialControls(),playingL:true,playingR:true};
-  f.mixer.beginTempo(i);
-  for(let n=1;n<=100;n++){
-   c['tempo'+['L','R'][i]]=.5+n/200;f.mixer.apply(c);
-   assert.equal(writes,0);assert.ok(f.elements.every(a=>!a.paused));
+  f.elements[i].currentTime=87;
+  const controls={...initialControls(),playingL:true,playingR:true};
+  for(let n=0;n<=100;n++){
+   controls['tempo'+['L','R'][i]]=n/100;f.mixer.apply(controls);
+   assert.equal(f.elements[i].playbackRate,.75+n/200);
+   assert.equal(f.elements[1-i].playbackRate,1);
+   assert.equal(f.elements[i].currentTime,87);assert.ok(f.elements.every(a=>!a.paused));
   }
-  assert.equal(f.mixer.settings[i].formattedBpm,'148.75');assert.equal(rate,1);
-  f.mixer.endTempo(i);f.mixer.endTempo(i);
-  for(let n=0;n<20;n++)f.mixer.apply(c);
-  assert.equal(rate,1.25);assert.equal(writes,1);assert.equal(f.elements[1-i].playbackRate,1);
-  assert.equal(f.elements[i].currentTime,87);assert.ok(f.elements.every(a=>!a.paused));
- }
-});
-test('completion, lost connection and leaving cancel a held tempo update without a late rate write or restart',async()=>{
- for(const reason of ['complete','offline','leave']){
-  const f=fixture();f.mixer.updateSession(session());await f.mixer.play(0);
-  f.mixer.beginTempo(0);f.mixer.apply({...initialControls(),playingL:true,tempoL:1});
-  let writes=0;Object.defineProperty(f.elements[0],'playbackRate',{get:()=>1,set:()=>{writes++;}});
-  if(reason==='leave')f.mixer.dispose();else f.mixer.updateSession(session(reason==='complete'?{phase:'complete'}:{}),reason!=='offline');
-  f.mixer.endTempo(0);assert.equal(writes,0);assert.ok(f.elements.every(a=>a.paused));
+  assert.equal(f.mixer.settings[i].formattedBpm,'148.75');
  }
 });
 test('all-stop pauses both decks immediately and invalidates an unfinished scratch release',async()=>{
